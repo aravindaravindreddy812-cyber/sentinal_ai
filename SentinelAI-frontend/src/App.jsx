@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-const API = 'http://127.0.0.1:8000'
+const API = 'https://sentinel-ai-uoug.onrender.com'
 const VIDEO_URL = `${API}/video`
 
 const demoIncident = {
