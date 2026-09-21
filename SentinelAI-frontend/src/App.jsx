@@ -284,105 +284,133 @@ function LiveCamera() {
      SEND FRAME TO BACKEND
      --------------------------------------------------------- */
 
-  const detectFrame = async () => {
-    const video = videoRef.current
+```javascript
+const detectFrame = async () => {
+  const video = videoRef.current
 
-    if (!video) return
+  if (!video) return
 
-    if (
-      video.videoWidth === 0 ||
-      video.videoHeight === 0
-    ) {
-      return
-    }
-
-    if (detectingRef.current) return
-
-    detectingRef.current = true
-
-    setDetectionStatus('PROCESSING')
-
-    const canvas =
-      document.createElement('canvas')
-
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-
-    const ctx =
-      canvas.getContext('2d')
-
-    if (!ctx) {
-      detectingRef.current = false
-      return
-    }
-
-    ctx.drawImage(
-      video,
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    )
-
-    canvas.toBlob(
-      async blob => {
-        if (!blob) {
-          detectingRef.current = false
-          return
-        }
-
-        try {
-          const response =
-            await fetch(`${API}/detect`, {
-              method: 'POST',
-              headers: {
-                'Content-Type':
-                  'image/jpeg'
-              },
-              body: blob
-            })
-
-          if (!response.ok) {
-            throw new Error(
-              `Detection API returned ${response.status}`
-            )
-          }
-
-          const data =
-            await response.json()
-
-          if (data.success) {
-            setDetections(
-              Array.isArray(data.detections)
-                ? data.detections
-                : []
-            )
-
-            if (data.zone) {
-              setZone(data.zone)
-            }
-
-            setIntrusion(
-              Boolean(
-                data.intrusion_detected
-              )
-            )
-
-            setDetectionStatus('ONLINE')
-          }
-        } catch (error) {
-          console.error(
-            'YOLO detection error:',
-            error
-          )
-        } finally {
-          detectingRef.current = false
-        }
-      },
-      'image/jpeg',
-      0.7
-    )
+  if (
+    video.videoWidth === 0 ||
+    video.videoHeight === 0
+  ) {
+    return
   }
+
+  // Prevent overlapping YOLO requests
+  if (detectingRef.current) return
+
+  detectingRef.current = true
+  setDetectionStatus('PROCESSING')
+
+  /*
+   * Keep the webcam itself at its normal resolution.
+   * Only resize the frame sent to YOLO.
+   *
+   * 1280x720 webcam
+   *       ↓
+   * 640x360 AI frame
+   */
+  const MAX_AI_WIDTH = 640
+  const MAX_AI_HEIGHT = 360
+
+  const scale = Math.min(
+    MAX_AI_WIDTH / video.videoWidth,
+    MAX_AI_HEIGHT / video.videoHeight,
+    1
+  )
+
+  const aiWidth = Math.round(
+    video.videoWidth * scale
+  )
+
+  const aiHeight = Math.round(
+    video.videoHeight * scale
+  )
+
+  const canvas =
+    document.createElement('canvas')
+
+  canvas.width = aiWidth
+  canvas.height = aiHeight
+
+  const ctx = canvas.getContext('2d')
+
+  if (!ctx) {
+    detectingRef.current = false
+    return
+  }
+
+  // Draw the smaller AI frame
+  ctx.drawImage(
+    video,
+    0,
+    0,
+    aiWidth,
+    aiHeight
+  )
+
+  canvas.toBlob(
+    async blob => {
+      if (!blob) {
+        detectingRef.current = false
+        return
+      }
+
+      try {
+        const response =
+          await fetch(`${API}/detect`, {
+            method: 'POST',
+            headers: {
+              'Content-Type':
+                'image/jpeg'
+            },
+            body: blob
+          })
+
+        if (!response.ok) {
+          throw new Error(
+            `Detection API returned ${response.status}`
+          )
+        }
+
+        const data =
+          await response.json()
+
+        if (data.success) {
+          setDetections(
+            Array.isArray(data.detections)
+              ? data.detections
+              : []
+          )
+
+          if (data.zone) {
+            setZone(data.zone)
+          }
+
+          setIntrusion(
+            Boolean(
+              data.intrusion_detected
+            )
+          )
+
+          setDetectionStatus('ONLINE')
+        }
+      } catch (error) {
+        console.error(
+          'YOLO detection error:',
+          error
+        )
+      } finally {
+        detectingRef.current = false
+      }
+    },
+    'image/jpeg',
+    0.65
+  )
+}
+```
+
 
   /* ---------------------------------------------------------
      CAMERA + DETECTION LOOP
