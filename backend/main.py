@@ -17,8 +17,10 @@ model = YOLO("yolov8n.pt")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://sentinel-ai-frontend-xufy.onrender.com"
-    ],
+    "http://localhost:5174",
+    "http://localhost:5173",
+    "https://sentinel-ai-frontend-xufy.onrender.com"
+],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
