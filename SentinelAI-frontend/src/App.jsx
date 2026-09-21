@@ -2,20 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 const API = 'https://sentinel-ai-uoug.onrender.com'
 
-const demoIncident = {
-  id: 101,
-  type: 'Restricted-Zone Intrusion',
-  camera: 'C04',
-  zone: 'Restricted Zone B',
-  person_id: 1,
-  movement: 'STATIONARY',
-  duration: 2,
-  risk_score: 60,
-  risk_level: 'MEDIUM',
-  created_at: '21:56:49',
-  status: 'Awaiting Verification'
-}
-
 function Icon({ children }) {
   return <span className="icon">{children}</span>
 }
@@ -40,6 +26,7 @@ function Sidebar({ page, setPage }) {
       </div>
 
       <div className="nav-label">COMMAND CENTER</div>
+
       <nav>
         {items.map(([key, label, icon]) => (
           <button
@@ -61,6 +48,7 @@ function Sidebar({ page, setPage }) {
           <StatusRow label="RISK ENGINE" />
           <StatusRow label="DATABASE" />
         </div>
+
         <div className="version">PROTOTYPE BUILD • 1.0</div>
       </div>
     </aside>
@@ -82,11 +70,27 @@ function Header({ page }) {
     <header className="topbar">
       <div>
         <div className="page-kicker">SENTINELAI / COMMAND CENTER</div>
-        <h1>{page === 'dashboard' ? 'Overview' : page[0].toUpperCase() + page.slice(1)}</h1>
+
+        <h1>
+          {page === 'dashboard'
+            ? 'Overview'
+            : page[0].toUpperCase() + page.slice(1)}
+        </h1>
       </div>
+
       <div className="top-actions">
-        <div className="clock">{new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'})}</div>
-        <div className="system-pill"><span className="dot"></span> SYSTEM ONLINE</div>
+        <div className="clock">
+          {new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          })}
+        </div>
+
+        <div className="system-pill">
+          <span className="dot"></span>
+          SYSTEM ONLINE
+        </div>
       </div>
     </header>
   )
@@ -94,7 +98,14 @@ function Header({ page }) {
 
 function RiskPanel({ incident }) {
   const score = incident?.risk_score ?? 0
-  const level = score >= 61 ? 'HIGH' : score >= 31 ? 'MEDIUM' : 'LOW'
+
+  const level =
+    score >= 61
+      ? 'HIGH'
+      : score >= 31
+        ? 'MEDIUM'
+        : 'LOW'
+
   return (
     <section className="card risk-card">
       <div className="section-head">
@@ -102,7 +113,10 @@ function RiskPanel({ incident }) {
           <div className="eyebrow">EXPLAINABLE AI</div>
           <h2>Risk assessment</h2>
         </div>
-        <span className={`badge ${level.toLowerCase()}`}>{level}</span>
+
+        <span className={`badge ${level.toLowerCase()}`}>
+          {incident ? level : 'NO EVENT'}
+        </span>
       </div>
 
       <div className="risk-score">
@@ -115,9 +129,20 @@ function RiskPanel({ incident }) {
       </div>
 
       <div className="risk-factors">
-        <RiskFactor label="Restricted zone" value="+40" />
-        <RiskFactor label="Night context" value={score >= 60 ? "+20" : "+0"} />
-        <RiskFactor label="Persistence" value={incident?.duration >= 10 ? "+15" : "+0"} />
+        <RiskFactor
+          label="Restricted zone"
+          value={incident ? '+40' : '+0'}
+        />
+
+        <RiskFactor
+          label="Night context"
+          value={incident && score >= 60 ? '+20' : '+0'}
+        />
+
+        <RiskFactor
+          label="Persistence"
+          value={incident?.duration >= 10 ? '+15' : '+0'}
+        />
       </div>
     </section>
   )
@@ -132,114 +157,238 @@ function RiskFactor({ label, value }) {
   )
 }
 
+/* =========================================================
+   LIVE CAMERA + YOLO DETECTION
+   ========================================================= */
+
 function LiveCamera() {
   const videoRef = useRef(null)
+  const detectingRef = useRef(false)
+
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [detections, setDetections] = useState([])
-  const detectFrame = async () => {
-  if (!videoRef.current) return
-
-  const video = videoRef.current
-
-  if (video.videoWidth === 0 || video.videoHeight === 0) return
-
-  const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-
-  const ctx = canvas.getContext('2d')
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-  canvas.toBlob(async (blob) => {
-    if (!blob) return
-
-    try {
-      const response = await fetch(`${API}/detect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'image/jpeg'
-        },
-        body: blob
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        setDetections(data.detections || [])
-      }
-    } catch (error) {
-      console.error('Detection error:', error)
-    }
-  }, 'image/jpeg', 0.7)
-}
+  const [detectionStatus, setDetectionStatus] = useState('WAITING')
 
   const startCamera = async () => {
     try {
       setCameraError('')
 
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setCameraError('Camera access is not supported by this browser.')
+      if (
+        !navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia
+      ) {
+        setCameraError(
+          'Camera access is not supported by this browser.'
+        )
         return
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user'
-        },
-        audio: false
-      })
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user'
+          },
+          audio: false
+        })
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream
+
         await videoRef.current.play()
+
         setCameraOn(true)
+        setDetectionStatus('WAITING')
       }
     } catch (error) {
       console.error('Camera access error:', error)
+
       setCameraError(
         error.name === 'NotAllowedError'
           ? 'Camera permission was denied. Please allow camera access.'
           : 'Unable to access the camera.'
       )
+
+      setCameraOn(false)
     }
+  }
+
+  const detectFrame = async () => {
+    if (!videoRef.current) return
+
+    const video = videoRef.current
+
+    if (
+      video.videoWidth === 0 ||
+      video.videoHeight === 0
+    ) {
+      return
+    }
+
+    /*
+      Do not start another YOLO request while the
+      previous Render request is still processing.
+    */
+    if (detectingRef.current) return
+
+    detectingRef.current = true
+
+    /*
+      IMPORTANT:
+      PROCESSING means YOLO is working.
+      It does NOT mean the camera is offline.
+    */
+    setDetectionStatus('PROCESSING')
+
+    const canvas = document.createElement('canvas')
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+
+    const ctx = canvas.getContext('2d')
+
+    if (!ctx) {
+      detectingRef.current = false
+      setDetectionStatus('WAITING')
+      return
+    }
+
+    ctx.drawImage(
+      video,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    )
+
+    canvas.toBlob(
+      async (blob) => {
+        if (!blob) {
+          detectingRef.current = false
+
+          /*
+            Keep the previous successful state instead
+            of showing OFFLINE.
+          */
+          return
+        }
+
+        try {
+          const response = await fetch(
+            `${API}/detect`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'image/jpeg'
+              },
+              body: blob
+            }
+          )
+
+          if (!response.ok) {
+            throw new Error(
+              `Detection API returned ${response.status}`
+            )
+          }
+
+          const data = await response.json()
+
+          if (data.success) {
+            /*
+              Replace detections only when a successful
+              YOLO response arrives.
+            */
+            setDetections(
+              Array.isArray(data.detections)
+                ? data.detections
+                : []
+            )
+
+            setDetectionStatus('ONLINE')
+          }
+
+          /*
+            If the server returns an error, keep the
+            previous detections and status instead of
+            switching the UI to OFFLINE.
+          */
+
+        } catch (error) {
+          console.error(
+            'YOLO detection error:',
+            error
+          )
+
+          /*
+            Do NOT show OFFLINE here.
+            The browser camera is still working.
+            Keep the previous successful YOLO result.
+          */
+
+        } finally {
+          detectingRef.current = false
+        }
+      },
+      'image/jpeg',
+      0.7
+    )
   }
 
   useEffect(() => {
-  startCamera()
+    startCamera()
 
-  const detectionTimer = setInterval(() => {
-    detectFrame()
-  }, 2000)
+    /*
+      YOLO runs once every 3 seconds.
 
-  return () => {
-    clearInterval(detectionTimer)
+      The webcam itself remains continuous.
+      Only the AI analysis is sampled.
+    */
+    const detectionTimer = setInterval(() => {
+      detectFrame()
+    }, 3000)
 
-    const stream = videoRef.current?.srcObject
+    return () => {
+      clearInterval(detectionTimer)
 
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop())
+      const stream =
+        videoRef.current?.srcObject
+
+      if (stream) {
+        stream
+          .getTracks()
+          .forEach(track => track.stop())
+      }
     }
-  }
-}, [])
+  }, [])
 
   return (
     <section className="card camera-card">
+
       <div className="section-head">
         <div>
-          <div className="eyebrow">LIVE SURVEILLANCE</div>
+          <div className="eyebrow">
+            LIVE SURVEILLANCE
+          </div>
+
           <h2>Camera C04</h2>
         </div>
 
         <span className="camera-live">
           <span className="dot"></span>
+
           {cameraOn ? 'LIVE' : 'WAITING'}
         </span>
       </div>
 
-      <div className="video-wrap">
+      <div
+        className="video-wrap"
+        style={{
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
 
         <video
           ref={videoRef}
@@ -250,21 +399,28 @@ function LiveCamera() {
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            display: cameraOn ? 'block' : 'none'
+            display: cameraOn
+              ? 'block'
+              : 'none'
           }}
         />
 
         {!cameraOn && (
           <div className="video-overlay">
-            <div className="video-icon">◉</div>
+
+            <div className="video-icon">
+              ◉
+            </div>
 
             <strong>
-              {cameraError || 'Requesting camera access...'}
+              {cameraError ||
+                'Requesting camera access...'}
             </strong>
 
             {!cameraError && (
               <span>
-                Please allow camera permission to start live surveillance.
+                Please allow camera permission
+                to start live surveillance.
               </span>
             )}
 
@@ -272,11 +428,14 @@ function LiveCamera() {
               <button
                 className="btn verify"
                 onClick={startCamera}
-                style={{ marginTop: '12px' }}
+                style={{
+                  marginTop: '12px'
+                }}
               >
                 ALLOW CAMERA
               </button>
             )}
+
           </div>
         )}
 
@@ -289,15 +448,115 @@ function LiveCamera() {
         </div>
 
         <div className="camera-overlay bottom-left">
-          {cameraOn ? 'CAMERA ACTIVE' : 'CAMERA OFFLINE'}
+          {cameraOn
+            ? 'CAMERA ACTIVE'
+            : 'CAMERA OFFLINE'}
         </div>
+
+        {/* YOLO detection panel */}
+
+        {cameraOn && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '50px',
+              left: '12px',
+              zIndex: 20,
+              background:
+                'rgba(0, 0, 0, 0.78)',
+              color: '#fff',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              minWidth: '150px',
+              fontSize: '13px',
+              backdropFilter: 'blur(4px)'
+            }}
+          >
+
+            <div
+              style={{
+                fontWeight: '700',
+                marginBottom: '6px'
+              }}
+            >
+              YOLO DETECTION
+            </div>
+
+            <div
+              style={{
+                fontSize: '11px',
+                opacity: 0.75,
+                marginBottom: '7px'
+              }}
+            >
+              STATUS: {detectionStatus}
+            </div>
+
+            {detections.length === 0 ? (
+              <div
+                style={{
+                  opacity: 0.8
+                }}
+              >
+                No objects detected
+              </div>
+            ) : (
+              detections.map(
+                (detection, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      marginTop: '4px'
+                    }}
+                  >
+                    <strong>
+                      {detection.label}
+                    </strong>{' '}
+                    —{' '}
+                    {(
+                      Number(
+                        detection.confidence
+                      ) * 100
+                    ).toFixed(1)}
+                    %
+                  </div>
+                )
+              )
+            )}
+
+          </div>
+        )}
+
+        {cameraOn && (
+          <div
+            style={{
+              position: 'absolute',
+              right: '12px',
+              bottom: '42px',
+              zIndex: 20,
+              background:
+                'rgba(0, 0, 0, 0.75)',
+              color: '#fff',
+              padding: '7px 10px',
+              borderRadius: '6px',
+              fontSize: '12px'
+            }}
+          >
+            OBJECTS: {detections.length}
+          </div>
+        )}
 
       </div>
 
       <div className="camera-stats">
+
         <Stat
           label="STATUS"
-          value={cameraOn ? 'ONLINE' : 'WAITING'}
+          value={
+            cameraOn
+              ? 'ONLINE'
+              : 'WAITING'
+          }
         />
 
         <Stat
@@ -311,10 +570,12 @@ function LiveCamera() {
         />
 
         <Stat
-          label="TRACKER"
-          value="BYTE"
+          label="DETECTION"
+          value={detectionStatus}
         />
+
       </div>
+
     </section>
   )
 }
@@ -328,306 +589,942 @@ function Stat({ label, value }) {
   )
 }
 
-function IncidentCard({ incident, onAction }) {
+/* =========================================================
+   INCIDENT CARD
+   ========================================================= */
+
+function IncidentCard({
+  incident,
+  onAction
+}) {
   if (!incident) {
     return (
       <section className="card incident-card empty">
-        <div className="empty-icon">✓</div>
-        <div className="eyebrow">ACTIVE INCIDENT</div>
+
+        <div className="empty-icon">
+          ✓
+        </div>
+
+        <div className="eyebrow">
+          ACTIVE INCIDENT
+        </div>
+
         <h2>Area secure</h2>
-        <p>No active incident is currently being reported by the prototype.</p>
+
+        <p>
+          No active incident is currently
+          being reported by the backend.
+        </p>
+
       </section>
     )
   }
 
   return (
     <section className="card incident-card">
+
       <div className="incident-top">
+
         <div>
-          <div className="eyebrow">ACTIVE INCIDENT</div>
-          <h2>Incident #{incident.id}</h2>
+          <div className="eyebrow">
+            ACTIVE INCIDENT
+          </div>
+
+          <h2>
+            Incident #{incident.id}
+          </h2>
         </div>
-        <span className={`badge ${String(incident.risk_level || 'LOW').toLowerCase()}`}>
+
+        <span
+          className={`badge ${String(
+            incident.risk_level || 'LOW'
+          ).toLowerCase()}`}
+        >
           {incident.risk_level || 'LOW'}
         </span>
+
       </div>
 
       <div className="incident-title">
-        <span className="alert-symbol">!</span>
+
+        <span className="alert-symbol">
+          !
+        </span>
+
         <div>
-          <strong>{incident.type}</strong>
-          <span>{incident.camera} • {incident.zone}</span>
+          <strong>
+            {incident.type}
+          </strong>
+
+          <span>
+            {incident.camera} •{' '}
+            {incident.zone}
+          </span>
         </div>
+
       </div>
 
       <div className="detail-grid">
-        <Detail label="Person" value={`ID ${incident.person_id}`} />
-        <Detail label="Movement" value={incident.movement} />
-        <Detail label="Duration" value={`${incident.duration} sec`} />
-        <Detail label="Time" value={incident.created_at} />
+
+        <Detail
+          label="Person"
+          value={`ID ${incident.person_id}`}
+        />
+
+        <Detail
+          label="Movement"
+          value={incident.movement}
+        />
+
+        <Detail
+          label="Duration"
+          value={`${incident.duration} sec`}
+        />
+
+        <Detail
+          label="Time"
+          value={incident.created_at}
+        />
+
       </div>
 
       <div className="incident-actions">
-        <button className="btn verify" onClick={() => onAction('verify', incident.id)}>VERIFY INCIDENT</button>
-        <button className="btn dismiss" onClick={() => onAction('dismiss', incident.id)}>DISMISS</button>
+
+        <button
+          className="btn verify"
+          onClick={() =>
+            onAction(
+              'verify',
+              incident.id
+            )
+          }
+        >
+          VERIFY INCIDENT
+        </button>
+
+        <button
+          className="btn dismiss"
+          onClick={() =>
+            onAction(
+              'dismiss',
+              incident.id
+            )
+          }
+        >
+          DISMISS
+        </button>
+
       </div>
+
     </section>
   )
 }
 
 function Detail({ label, value }) {
-  return <div className="detail"><span>{label}</span><strong>{value}</strong></div>
-}
-
-function CameraNetwork() {
   return (
-    <section className="card network-card">
-      <div className="section-head">
-        <div>
-          <div className="eyebrow">SURVEILLANCE NETWORK</div>
-          <h2>Camera network</h2>
-        </div>
-        <span className="muted">3 nodes</span>
-      </div>
-      <div className="camera-list">
-        <CameraNode id="C04" status="ONLINE" live />
-        <CameraNode id="C05" status="STANDBY" />
-        <CameraNode id="C07" status="OFFLINE" offline />
-      </div>
-    </section>
-  )
-}
-
-function CameraNode({ id, status, live, offline }) {
-  return (
-    <div className="camera-node">
-      <div className="node-icon">▣</div>
-      <div className="node-info">
-        <strong>{id}</strong>
-        <span>{live ? 'Primary webcam' : 'Prototype node'}</span>
-      </div>
-      <div className={`node-status ${offline ? 'offline' : live ? '' : 'standby'}`}>
-        <span className="dot"></span>{status}
-      </div>
+    <div className="detail">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   )
 }
 
-function Timeline({ incidents }) {
-  const rows = incidents.slice(0, 5)
+/* =========================================================
+   CAMERA NETWORK
+   ========================================================= */
+
+function CameraNetwork() {
   return (
-    <section className="card timeline-card">
+    <section className="card network-card">
+
       <div className="section-head">
+
         <div>
-          <div className="eyebrow">EVENT HISTORY</div>
-          <h2>Incident timeline</h2>
+          <div className="eyebrow">
+            SURVEILLANCE NETWORK
+          </div>
+
+          <h2>Camera network</h2>
         </div>
+
+        <span className="muted">
+          3 nodes
+        </span>
+
       </div>
-      {rows.length === 0 ? (
-        <div className="empty-timeline">No incidents recorded yet.</div>
-      ) : (
-        <div className="timeline">
-          {rows.map((item, index) => (
-            <div className="timeline-item" key={item.id}>
-              <div className="timeline-line"><span className={`timeline-dot ${index === 0 ? 'active' : ''}`}></span></div>
-              <div className="timeline-content">
-                <span className="timeline-time">{item.created_at}</span>
-                <strong>Incident #{item.id} — {item.type}</strong>
-                <span>{item.camera} • {item.zone} • Risk {item.risk_score}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+
+      <div className="camera-list">
+
+        <CameraNode
+          id="C04"
+          status="ONLINE"
+          live
+        />
+
+        <CameraNode
+          id="C05"
+          status="STANDBY"
+        />
+
+        <CameraNode
+          id="C07"
+          status="OFFLINE"
+          offline
+        />
+
+      </div>
+
     </section>
   )
 }
 
-function Overview({ incidents, activeIncident, onAction }) {
+function CameraNode({
+  id,
+  status,
+  live,
+  offline
+}) {
+  return (
+    <div className="camera-node">
+
+      <div className="node-icon">
+        ▣
+      </div>
+
+      <div className="node-info">
+
+        <strong>{id}</strong>
+
+        <span>
+          {live
+            ? 'Primary browser webcam'
+            : 'Prototype node'}
+        </span>
+
+      </div>
+
+      <div
+        className={`node-status ${
+          offline
+            ? 'offline'
+            : live
+              ? ''
+              : 'standby'
+        }`}
+      >
+        <span className="dot"></span>
+        {status}
+      </div>
+
+    </div>
+  )
+}
+
+/* =========================================================
+   TIMELINE
+   ========================================================= */
+
+function Timeline({ incidents }) {
+  const rows = incidents.slice(0, 5)
+
+  return (
+    <section className="card timeline-card">
+
+      <div className="section-head">
+
+        <div>
+          <div className="eyebrow">
+            EVENT HISTORY
+          </div>
+
+          <h2>Incident timeline</h2>
+        </div>
+
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="empty-timeline">
+          No incidents recorded yet.
+        </div>
+      ) : (
+        <div className="timeline">
+
+          {rows.map(
+            (item, index) => (
+              <div
+                className="timeline-item"
+                key={item.id}
+              >
+
+                <div className="timeline-line">
+                  <span
+                    className={`timeline-dot ${
+                      index === 0
+                        ? 'active'
+                        : ''
+                    }`}
+                  ></span>
+                </div>
+
+                <div className="timeline-content">
+
+                  <span className="timeline-time">
+                    {item.created_at}
+                  </span>
+
+                  <strong>
+                    Incident #{item.id} —{' '}
+                    {item.type}
+                  </strong>
+
+                  <span>
+                    {item.camera} •{' '}
+                    {item.zone} • Risk{' '}
+                    {item.risk_score}
+                  </span>
+
+                </div>
+
+              </div>
+            )
+          )}
+
+        </div>
+      )}
+
+    </section>
+  )
+}
+
+/* =========================================================
+   OVERVIEW
+   ========================================================= */
+
+function Overview({
+  incidents,
+  activeIncident,
+  onAction
+}) {
   const stats = useMemo(() => {
-    const high = incidents.filter(i => i.risk_level === 'HIGH').length
-    const pending = incidents.filter(i => String(i.status).toLowerCase().includes('awaiting')).length
-    return { total: incidents.length, high, pending }
+
+    const high =
+      incidents.filter(
+        i => i.risk_level === 'HIGH'
+      ).length
+
+    const pending =
+      incidents.filter(
+        i =>
+          String(i.status)
+            .toLowerCase()
+            .includes('awaiting')
+      ).length
+
+    return {
+      total: incidents.length,
+      high,
+      pending
+    }
+
   }, [incidents])
 
   return (
     <>
       <div className="stats-grid">
-        <Metric label="TOTAL INCIDENTS" value={stats.total} sub="Recorded in SQLite" />
-        <Metric label="HIGH RISK" value={stats.high} sub="Risk score ≥ 61" danger />
-        <Metric label="PENDING REVIEW" value={stats.pending} sub="Awaiting verification" />
-        <Metric label="ACTIVE CAMERA" value="C04" sub="Webcam connected" />
+
+        <Metric
+          label="TOTAL INCIDENTS"
+          value={stats.total}
+          sub="Recorded in SQLite"
+        />
+
+        <Metric
+          label="HIGH RISK"
+          value={stats.high}
+          sub="Risk score ≥ 61"
+          danger
+        />
+
+        <Metric
+          label="PENDING REVIEW"
+          value={stats.pending}
+          sub="Awaiting verification"
+        />
+
+        <Metric
+          label="ACTIVE CAMERA"
+          value="C04"
+          sub="Browser webcam connected"
+        />
+
       </div>
 
       <div className="main-grid">
+
         <LiveCamera />
-        <IncidentCard incident={activeIncident} onAction={onAction} />
+
+        <IncidentCard
+          incident={activeIncident}
+          onAction={onAction}
+        />
+
       </div>
 
       <div className="lower-grid">
-        <RiskPanel incident={activeIncident || demoIncident} />
+
+        <RiskPanel
+          incident={activeIncident}
+        />
+
         <CameraNetwork />
+
       </div>
 
-      <Timeline incidents={incidents} />
+      <Timeline
+        incidents={incidents}
+      />
     </>
   )
 }
 
-function Metric({ label, value, sub, danger }) {
+function Metric({
+  label,
+  value,
+  sub,
+  danger
+}) {
   return (
     <div className="metric">
-      <div className="metric-label">{label}</div>
-      <div className={`metric-value ${danger ? 'danger-text' : ''}`}>{value}</div>
-      <div className="metric-sub">{sub}</div>
+
+      <div className="metric-label">
+        {label}
+      </div>
+
+      <div
+        className={`metric-value ${
+          danger
+            ? 'danger-text'
+            : ''
+        }`}
+      >
+        {value}
+      </div>
+
+      <div className="metric-sub">
+        {sub}
+      </div>
+
     </div>
   )
 }
 
-function IncidentsPage({ incidents, onAction }) {
+/* =========================================================
+   INCIDENTS PAGE
+   ========================================================= */
+
+function IncidentsPage({
+  incidents,
+  onAction
+}) {
   return (
     <section className="card page-card">
+
       <div className="section-head">
+
         <div>
-          <div className="eyebrow">DATABASE</div>
-          <h2>Incident records</h2>
+          <div className="eyebrow">
+            DATABASE
+          </div>
+
+          <h2>
+            Incident records
+          </h2>
         </div>
-        <span className="muted">{incidents.length} records</span>
+
+        <span className="muted">
+          {incidents.length} records
+        </span>
+
       </div>
+
       <div className="table-wrap">
+
         <table>
+
           <thead>
-            <tr><th>ID</th><th>Camera</th><th>Event</th><th>Risk</th><th>Time</th><th>Status</th><th>Action</th></tr>
+            <tr>
+              <th>ID</th>
+              <th>Camera</th>
+              <th>Event</th>
+              <th>Risk</th>
+              <th>Time</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
           </thead>
+
           <tbody>
+
             {incidents.map(i => (
               <tr key={i.id}>
-                <td>#{i.id}</td>
-                <td>{i.camera}</td>
-                <td>{i.type}</td>
-                <td><span className={`badge small ${String(i.risk_level || 'LOW').toLowerCase()}`}>{i.risk_score}</span></td>
-                <td>{i.created_at}</td>
-                <td>{i.status}</td>
+
                 <td>
-                  {String(i.status).toLowerCase().includes('awaiting') ? (
-                    <div className="table-actions">
-                      <button onClick={() => onAction('verify', i.id)}>Verify</button>
-                      <button onClick={() => onAction('dismiss', i.id)}>Dismiss</button>
-                    </div>
-                  ) : <span className="muted">Closed</span>}
+                  #{i.id}
                 </td>
+
+                <td>
+                  {i.camera}
+                </td>
+
+                <td>
+                  {i.type}
+                </td>
+
+                <td>
+                  <span
+                    className={`badge small ${String(
+                      i.risk_level || 'LOW'
+                    ).toLowerCase()}`}
+                  >
+                    {i.risk_score}
+                  </span>
+                </td>
+
+                <td>
+                  {i.created_at}
+                </td>
+
+                <td>
+                  {i.status}
+                </td>
+
+                <td>
+
+                  {String(i.status)
+                    .toLowerCase()
+                    .includes('awaiting') ? (
+
+                    <div className="table-actions">
+
+                      <button
+                        onClick={() =>
+                          onAction(
+                            'verify',
+                            i.id
+                          )
+                        }
+                      >
+                        Verify
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          onAction(
+                            'dismiss',
+                            i.id
+                          )
+                        }
+                      >
+                        Dismiss
+                      </button>
+
+                    </div>
+
+                  ) : (
+                    <span className="muted">
+                      Closed
+                    </span>
+                  )}
+
+                </td>
+
               </tr>
             ))}
+
           </tbody>
+
         </table>
+
       </div>
+
     </section>
   )
 }
 
+/* =========================================================
+   CAMERAS PAGE
+   ========================================================= */
+
 function CamerasPage() {
   return (
     <div className="camera-page-grid">
+
       <LiveCamera />
+
       <CameraNetwork />
+
       <section className="card page-card">
-        <div className="eyebrow">CURRENT CONFIGURATION</div>
-        <h2>Camera C04</h2>
-        <div className="config-grid">
-          <Detail label="Input" value="Webcam 0" />
-          <Detail label="Resolution" value="1280 × 720" />
-          <Detail label="Model" value="YOLOv8n" />
-          <Detail label="Tracker" value="ByteTrack" />
-          <Detail label="Zone" value="Restricted Zone B" />
-          <Detail label="Confidence" value="0.45" />
+
+        <div className="eyebrow">
+          CURRENT CONFIGURATION
         </div>
+
+        <h2>
+          Camera C04
+        </h2>
+
+        <div className="config-grid">
+
+          <Detail
+            label="Input"
+            value="Browser Webcam"
+          />
+
+          <Detail
+            label="Resolution"
+            value="1280 × 720"
+          />
+
+          <Detail
+            label="Model"
+            value="YOLOv8n"
+          />
+
+          <Detail
+            label="Tracker"
+            value="ByteTrack"
+          />
+
+          <Detail
+            label="Zone"
+            value="Restricted Zone B"
+          />
+
+          <Detail
+            label="Confidence"
+            value="0.45"
+          />
+
+        </div>
+
       </section>
+
     </div>
   )
 }
 
-function TimelinePage({ incidents }) {
-  return <Timeline incidents={incidents} />
+function TimelinePage({
+  incidents
+}) {
+  return (
+    <Timeline
+      incidents={incidents}
+    />
+  )
 }
 
-function AnalyticsPage({ incidents }) {
-  const high = incidents.filter(i => i.risk_level === 'HIGH').length
-  const medium = incidents.filter(i => i.risk_level === 'MEDIUM').length
-  const low = incidents.filter(i => i.risk_level === 'LOW').length
+/* =========================================================
+   ANALYTICS PAGE
+   ========================================================= */
+
+function AnalyticsPage({
+  incidents
+}) {
+  const high =
+    incidents.filter(
+      i => i.risk_level === 'HIGH'
+    ).length
+
+  const medium =
+    incidents.filter(
+      i => i.risk_level === 'MEDIUM'
+    ).length
+
+  const low =
+    incidents.filter(
+      i => i.risk_level === 'LOW'
+    ).length
+
   return (
     <div className="analytics-grid">
-      <Metric label="TOTAL EVENTS" value={incidents.length} sub="From current database" />
-      <Metric label="HIGH RISK" value={high} sub="Risk score ≥ 61" danger />
-      <Metric label="MEDIUM RISK" value={medium} sub="Risk score 31–60" />
-      <Metric label="LOW RISK" value={low} sub="Risk score ≤ 30" />
+
+      <Metric
+        label="TOTAL EVENTS"
+        value={incidents.length}
+        sub="From current database"
+      />
+
+      <Metric
+        label="HIGH RISK"
+        value={high}
+        sub="Risk score ≥ 61"
+        danger
+      />
+
+      <Metric
+        label="MEDIUM RISK"
+        value={medium}
+        sub="Risk score 31–60"
+      />
+
+      <Metric
+        label="LOW RISK"
+        value={low}
+        sub="Risk score ≤ 30"
+      />
+
       <section className="card page-card chart-card">
-        <div className="eyebrow">RISK DISTRIBUTION</div>
-        <h2>Current incident profile</h2>
-        <div className="bar-row"><span>HIGH</span><div><i style={{width: `${incidents.length ? high/incidents.length*100 : 0}%`}}></i></div><strong>{high}</strong></div>
-        <div className="bar-row"><span>MEDIUM</span><div><i style={{width: `${incidents.length ? medium/incidents.length*100 : 0}%`}}></i></div><strong>{medium}</strong></div>
-        <div className="bar-row"><span>LOW</span><div><i style={{width: `${incidents.length ? low/incidents.length*100 : 0}%`}}></i></div><strong>{low}</strong></div>
+
+        <div className="eyebrow">
+          RISK DISTRIBUTION
+        </div>
+
+        <h2>
+          Current incident profile
+        </h2>
+
+        <div className="bar-row">
+
+          <span>HIGH</span>
+
+          <div>
+            <i
+              style={{
+                width: `${
+                  incidents.length
+                    ? high /
+                      incidents.length *
+                      100
+                    : 0
+                }%`
+              }}
+            ></i>
+          </div>
+
+          <strong>{high}</strong>
+
+        </div>
+
+        <div className="bar-row">
+
+          <span>MEDIUM</span>
+
+          <div>
+            <i
+              style={{
+                width: `${
+                  incidents.length
+                    ? medium /
+                      incidents.length *
+                      100
+                    : 0
+                }%`
+              }}
+            ></i>
+          </div>
+
+          <strong>{medium}</strong>
+
+        </div>
+
+        <div className="bar-row">
+
+          <span>LOW</span>
+
+          <div>
+            <i
+              style={{
+                width: `${
+                  incidents.length
+                    ? low /
+                      incidents.length *
+                      100
+                    : 0
+                }%`
+              }}
+            ></i>
+          </div>
+
+          <strong>{low}</strong>
+
+        </div>
+
       </section>
+
     </div>
   )
 }
 
+/* =========================================================
+   MAIN APP
+   ========================================================= */
+
 export default function App() {
-  const [page, setPage] = useState('dashboard')
-  const [incidents, setIncidents] = useState([])
-  const [activeIncident, setActiveIncident] = useState(null)
-  const [apiOnline, setApiOnline] = useState(false)
+  const [page, setPage] =
+    useState('dashboard')
+
+  const [incidents, setIncidents] =
+    useState([])
+
+  const [activeIncident, setActiveIncident] =
+    useState(null)
+
+  const [apiOnline, setApiOnline] =
+    useState(false)
 
   async function loadIncidents() {
     try {
-      const response = await fetch(`${API}/incidents`)
-      if (!response.ok) throw new Error('API error')
-      const data = await response.json()
+      const response =
+        await fetch(
+          `${API}/incidents`
+        )
+
+      if (!response.ok) {
+        throw new Error(
+          'API error'
+        )
+      }
+
+      const data =
+        await response.json()
+
       setIncidents(data)
-      setActiveIncident(data.find(i => String(i.status).toLowerCase().includes('awaiting')) || null)
+
+      setActiveIncident(
+        data.find(
+          i =>
+            String(i.status)
+              .toLowerCase()
+              .includes(
+                'awaiting'
+              )
+        ) || null
+      )
+
       setApiOnline(true)
-    } catch {
+
+    } catch (error) {
+
+      console.error(
+        'Incident API error:',
+        error
+      )
+
       setApiOnline(false)
+
     }
   }
 
-  async function handleAction(action, id) {
+  async function handleAction(
+    action,
+    id
+  ) {
     try {
-      const response = await fetch(`${API}/incidents/${id}/${action}`, { method: 'PUT' })
-      if (!response.ok) throw new Error('Action failed')
+
+      const response =
+        await fetch(
+          `${API}/incidents/${id}/${action}`,
+          {
+            method: 'PUT'
+          }
+        )
+
+      if (!response.ok) {
+        throw new Error(
+          'Action failed'
+        )
+      }
+
       await loadIncidents()
+
     } catch (error) {
+
       console.error(error)
-      alert('Backend action failed. Make sure FastAPI is running.')
+
+      alert(
+        'Backend action failed. Make sure FastAPI is running.'
+      )
     }
   }
 
   useEffect(() => {
+
     loadIncidents()
-    const timer = setInterval(loadIncidents, 3000)
-    return () => clearInterval(timer)
+
+    const timer =
+      setInterval(
+        loadIncidents,
+        3000
+      )
+
+    return () =>
+      clearInterval(timer)
+
   }, [])
 
   return (
     <div className="app-shell">
-      <Sidebar page={page} setPage={setPage} />
+
+      <Sidebar
+        page={page}
+        setPage={setPage}
+      />
+
       <main className="content">
-        <Header page={page} />
+
+        <Header
+          page={page}
+        />
 
         <div className="connection-banner">
-          <span className={`dot ${apiOnline ? '' : 'amber'}`}></span>
-          {apiOnline ? 'FastAPI backend connected • SQLite synchronized' : 'FastAPI backend not connected • showing dashboard shell'}
+
+          <span
+            className={`dot ${
+              apiOnline
+                ? ''
+                : 'amber'
+            }`}
+          ></span>
+
+          {apiOnline
+            ? 'FastAPI backend connected • SQLite synchronized'
+            : 'FastAPI backend not connected • showing dashboard shell'}
+
         </div>
 
         {page === 'dashboard' && (
-          <Overview incidents={incidents} activeIncident={activeIncident} onAction={handleAction} />
+          <Overview
+            incidents={incidents}
+            activeIncident={activeIncident}
+            onAction={handleAction}
+          />
         )}
+
         {page === 'incidents' && (
-          <IncidentsPage incidents={incidents} onAction={handleAction} />
+          <IncidentsPage
+            incidents={incidents}
+            onAction={handleAction}
+          />
         )}
-        {page === 'cameras' && <CamerasPage />}
-        {page === 'timeline' && <TimelinePage incidents={incidents} />}
-        {page === 'analytics' && <AnalyticsPage incidents={incidents} />}
+
+        {page === 'cameras' && (
+          <CamerasPage />
+        )}
+
+        {page === 'timeline' && (
+          <TimelinePage
+            incidents={incidents}
+          />
+        )}
+
+        {page === 'analytics' && (
+          <AnalyticsPage
+            incidents={incidents}
+          />
+        )}
+
       </main>
+
     </div>
   )
 }
