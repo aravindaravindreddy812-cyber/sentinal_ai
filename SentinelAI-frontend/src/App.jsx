@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const API = 'https://sentinel-ai-uoug.onrender.com'
-const VIDEO_URL = `${API}/video`
 
 const demoIncident = {
   id: 101,
@@ -134,7 +133,55 @@ function RiskFactor({ label, value }) {
 }
 
 function LiveCamera() {
-  const [loaded, setLoaded] = useState(false)
+  const videoRef = useRef(null)
+  const [cameraOn, setCameraOn] = useState(false)
+  const [cameraError, setCameraError] = useState('')
+
+  const startCamera = async () => {
+    try {
+      setCameraError('')
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError('Camera access is not supported by this browser.')
+        return
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        },
+        audio: false
+      })
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+        setCameraOn(true)
+      }
+    } catch (error) {
+      console.error('Camera access error:', error)
+      setCameraError(
+        error.name === 'NotAllowedError'
+          ? 'Camera permission was denied. Please allow camera access.'
+          : 'Unable to access the camera.'
+      )
+    }
+  }
+
+  useEffect(() => {
+    startCamera()
+
+    return () => {
+      const stream = videoRef.current?.srcObject
+
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop())
+      }
+    }
+  }, [])
+
   return (
     <section className="card camera-card">
       <div className="section-head">
@@ -142,33 +189,88 @@ function LiveCamera() {
           <div className="eyebrow">LIVE SURVEILLANCE</div>
           <h2>Camera C04</h2>
         </div>
-        <span className="camera-live"><span className="dot"></span> LIVE</span>
+
+        <span className="camera-live">
+          <span className="dot"></span>
+          {cameraOn ? 'LIVE' : 'WAITING'}
+        </span>
       </div>
 
       <div className="video-wrap">
-        <img
-          src={VIDEO_URL}
-          alt="SentinelAI live CCTV"
-          onLoad={() => setLoaded(true)}
-          onError={() => setLoaded(false)}
+
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: cameraOn ? 'block' : 'none'
+          }}
         />
-        {!loaded && (
+
+        {!cameraOn && (
           <div className="video-overlay">
             <div className="video-icon">◉</div>
-            <strong>Waiting for live stream</strong>
-            <span>Start the SentinelAI video backend to display the processed webcam feed.</span>
+
+            <strong>
+              {cameraError || 'Requesting camera access...'}
+            </strong>
+
+            {!cameraError && (
+              <span>
+                Please allow camera permission to start live surveillance.
+              </span>
+            )}
+
+            {cameraError && (
+              <button
+                className="btn verify"
+                onClick={startCamera}
+                style={{ marginTop: '12px' }}
+              >
+                ALLOW CAMERA
+              </button>
+            )}
           </div>
         )}
-        <div className="camera-overlay top-left">CAM C04</div>
-        <div className="camera-overlay top-right">1280 × 720</div>
-        <div className="camera-overlay bottom-left">AI TRACKING ACTIVE</div>
+
+        <div className="camera-overlay top-left">
+          CAM C04
+        </div>
+
+        <div className="camera-overlay top-right">
+          1280 × 720
+        </div>
+
+        <div className="camera-overlay bottom-left">
+          {cameraOn ? 'CAMERA ACTIVE' : 'CAMERA OFFLINE'}
+        </div>
+
       </div>
 
       <div className="camera-stats">
-        <Stat label="STATUS" value="ONLINE" />
-        <Stat label="SOURCE" value="WEBCAM" />
-        <Stat label="MODEL" value="YOLOv8n" />
-        <Stat label="TRACKER" value="BYTE" />
+        <Stat
+          label="STATUS"
+          value={cameraOn ? 'ONLINE' : 'WAITING'}
+        />
+
+        <Stat
+          label="SOURCE"
+          value="BROWSER WEBCAM"
+        />
+
+        <Stat
+          label="MODEL"
+          value="YOLOv8n"
+        />
+
+        <Stat
+          label="TRACKER"
+          value="BYTE"
+        />
       </div>
     </section>
   )
