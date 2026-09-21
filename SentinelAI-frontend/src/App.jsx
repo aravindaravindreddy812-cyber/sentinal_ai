@@ -284,7 +284,6 @@ function LiveCamera() {
      SEND FRAME TO BACKEND
      --------------------------------------------------------- */
 
-```javascript
 const detectFrame = async () => {
   const video = videoRef.current
 
@@ -297,19 +296,21 @@ const detectFrame = async () => {
     return
   }
 
-  // Prevent overlapping YOLO requests
+  // Prevent multiple YOLO requests from running at once
   if (detectingRef.current) return
 
   detectingRef.current = true
   setDetectionStatus('PROCESSING')
 
   /*
-   * Keep the webcam itself at its normal resolution.
-   * Only resize the frame sent to YOLO.
+   * The browser webcam remains 1280x720.
    *
-   * 1280x720 webcam
-   *       ↓
-   * 640x360 AI frame
+   * Only the image sent to the backend is resized
+   * to reduce YOLO/ByteTrack workload.
+   *
+   * 1280x720
+   *    ↓
+   * 640x360
    */
   const MAX_AI_WIDTH = 640
   const MAX_AI_HEIGHT = 360
@@ -334,14 +335,16 @@ const detectFrame = async () => {
   canvas.width = aiWidth
   canvas.height = aiHeight
 
-  const ctx = canvas.getContext('2d')
+  const ctx =
+    canvas.getContext('2d')
 
   if (!ctx) {
     detectingRef.current = false
+    setDetectionStatus('WAITING')
     return
   }
 
-  // Draw the smaller AI frame
+  // Draw the resized frame
   ctx.drawImage(
     video,
     0,
@@ -351,66 +354,154 @@ const detectFrame = async () => {
   )
 
   canvas.toBlob(
-    async blob => {
+    async (blob) => {
+
       if (!blob) {
         detectingRef.current = false
+        setDetectionStatus('WAITING')
         return
       }
 
       try {
+
+        /*
+         * Using string concatenation here
+         * deliberately avoids template-literal
+         * copy/paste problems.
+         */
         const response =
-          await fetch(`${API}/detect, {
-            method: 'POST',
-            headers: {
-              'Content-Type':
-                'image/jpeg'
-            },
-            body: blob
-          })
+          await fetch(
+            API + '/detect',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type':
+                  'image/jpeg'
+              },
+              body: blob
+            }
+          )
 
         if (!response.ok) {
           throw new Error(
-            `Detection API returned ${response.status}`
+            'Detection API returned ' +
+            response.status
           )
         }
 
         const data =
           await response.json()
 
-        if (data.success) {
-          setDetections(
-            Array.isArray(data.detections)
-              ? data.detections
-              : []
-          )
+        if (!data.success) {
 
-          if (data.zone) {
-            setZone(data.zone)
-          }
-
-          setIntrusion(
-            Boolean(
-              data.intrusion_detected
-            )
+          console.error(
+            'YOLO detection failed:',
+            data.error
           )
 
           setDetectionStatus('ONLINE')
+          return
         }
+
+        /*
+         * Keep the complete backend response.
+         *
+         * This includes:
+         * - track_id
+         * - zone_status
+         * - movement
+         * - duration
+         * - risk_score
+         * - risk_level
+         * - incident_id
+         */
+        const newDetections =
+          Array.isArray(
+            data.detections
+          )
+            ? data.detections
+            : []
+
+        setDetections(
+          newDetections
+        )
+
+        /*
+         * IMPORTANT:
+         * The backend zone is based on the
+         * resized AI frame.
+         *
+         * The overlay itself is drawn against
+         * the original webcam resolution.
+         *
+         * Therefore scale the backend coordinates
+         * back to the original video dimensions.
+         */
+        if (data.zone) {
+
+          const zoneScaleX =
+            video.videoWidth /
+            aiWidth
+
+          const zoneScaleY =
+            video.videoHeight /
+            aiHeight
+
+          const scaledZone = {
+            x1:
+              data.zone.x1 *
+              zoneScaleX,
+
+            y1:
+              data.zone.y1 *
+              zoneScaleY,
+
+            x2:
+              data.zone.x2 *
+              zoneScaleX,
+
+            y2:
+              data.zone.y2 *
+              zoneScaleY
+          }
+
+          setZone(
+            scaledZone
+          )
+        }
+
+        setIntrusion(
+          Boolean(
+            data.intrusion_detected
+          )
+        )
+
+        setDetectionStatus(
+          'ONLINE'
+        )
+
       } catch (error) {
+
         console.error(
           'YOLO detection error:',
           error
         )
+
+        setDetectionStatus(
+          'ONLINE'
+        )
+
       } finally {
-        detectingRef.current = false
+
+        detectingRef.current =
+          false
       }
+
     },
     'image/jpeg',
     0.65
   )
 }
-```
-
 
   /* ---------------------------------------------------------
      CAMERA + DETECTION LOOP
