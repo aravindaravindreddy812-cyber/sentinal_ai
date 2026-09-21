@@ -359,7 +359,7 @@ const detectFrame = async () => {
 
       try {
         const response =
-          await fetch(`${API}/detect`, {
+          await fetch(`${API}/detect, {
             method: 'POST',
             headers: {
               'Content-Type':
