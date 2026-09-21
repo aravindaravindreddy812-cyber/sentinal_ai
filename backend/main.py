@@ -13,6 +13,12 @@ app = FastAPI(
     description="AI-powered security incident monitoring system",
     version="2.0"
 )
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy",
+        "service": "SentinelAI"
+    }
 
 
 # ============================================================
