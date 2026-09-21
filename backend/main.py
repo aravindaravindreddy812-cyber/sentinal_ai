@@ -9,6 +9,15 @@ app = FastAPI(
     version="1.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://sentinel-ai-frontend-xufy.onrender.com"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Create database table when server starts
 create_table()
