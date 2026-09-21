@@ -11,6 +11,8 @@ app = FastAPI(
     description="AI-powered security incident monitoring system",
     version="1.0"
 )
+# YOLO model
+model = YOLO("yolov8n.pt")
 
 app.add_middleware(
     CORSMiddleware,
@@ -177,3 +179,66 @@ def dismiss_incident(incident_id: int):
         "message": "Incident dismissed",
         "incident_id": incident_id
     }
+    @app.post("/detect")
+async def detect_frame(request: Request):
+    try:
+        # Receive JPEG/PNG image bytes from browser
+        image_bytes = await request.body()
+
+        if not image_bytes:
+            return {
+                "success": False,
+                "error": "No image received"
+            }
+
+        # Convert bytes → OpenCV image
+        image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
+        if frame is None:
+            return {
+                "success": False,
+                "error": "Could not decode image"
+            }
+
+        # Run YOLO
+        results = model(frame, verbose=False)
+
+        detections = []
+
+        for result in results:
+            if result.boxes is None:
+                continue
+
+            boxes = result.boxes
+
+            for i in range(len(boxes)):
+                cls_id = int(boxes.cls[i].item())
+                confidence = float(boxes.conf[i].item())
+
+                label = model.names[cls_id]
+
+                x1, y1, x2, y2 = boxes.xyxy[i].tolist()
+
+                detections.append({
+                    "label": label,
+                    "confidence": round(confidence, 3),
+                    "box": [
+                        round(x1),
+                        round(y1),
+                        round(x2),
+                        round(y2)
+                    ]
+                })
+
+        return {
+            "success": True,
+            "detections": detections,
+            "count": len(detections)
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
