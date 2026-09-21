@@ -136,6 +136,7 @@ function LiveCamera() {
   const videoRef = useRef(null)
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
+  const [detections, setDetections] = useState([])
 
   const startCamera = async () => {
     try {
