@@ -2,9 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 const API = 'https://sentinel-ai-uoug.onrender.com'
 
+/* =========================================================
+   ICON
+   ========================================================= */
+
 function Icon({ children }) {
   return <span className="icon">{children}</span>
 }
+
+/* =========================================================
+   SIDEBAR
+   ========================================================= */
 
 function Sidebar({ page, setPage }) {
   const items = [
@@ -19,19 +27,29 @@ function Sidebar({ page, setPage }) {
     <aside className="sidebar">
       <div className="brand">
         <div className="brand-mark">S</div>
+
         <div>
-          <div className="brand-name">SENTINEL<span>AI</span></div>
-          <div className="brand-sub">BORDER INTELLIGENCE</div>
+          <div className="brand-name">
+            SENTINEL<span>AI</span>
+          </div>
+
+          <div className="brand-sub">
+            BORDER INTELLIGENCE
+          </div>
         </div>
       </div>
 
-      <div className="nav-label">COMMAND CENTER</div>
+      <div className="nav-label">
+        COMMAND CENTER
+      </div>
 
       <nav>
         {items.map(([key, label, icon]) => (
           <button
             key={key}
-            className={`nav-item ${page === key ? 'active' : ''}`}
+            className={`nav-item ${
+              page === key ? 'active' : ''
+            }`}
             onClick={() => setPage(key)}
           >
             <Icon>{icon}</Icon>
@@ -42,34 +60,45 @@ function Sidebar({ page, setPage }) {
 
       <div className="sidebar-bottom">
         <div className="mini-status">
-          <div className="mini-status-title">SYSTEM STATUS</div>
+          <div className="mini-status-title">
+            SYSTEM STATUS
+          </div>
+
           <StatusRow label="AI ENGINE" />
           <StatusRow label="TRACKING" />
           <StatusRow label="RISK ENGINE" />
           <StatusRow label="DATABASE" />
         </div>
 
-        <div className="version">PROTOTYPE BUILD • 1.0</div>
+        <div className="version">
+          PROTOTYPE BUILD • 2.0
+        </div>
       </div>
     </aside>
   )
 }
 
-function StatusRow({ label, warning = false }) {
+function StatusRow({ label }) {
   return (
     <div className="status-row">
-      <span className={`dot ${warning ? 'amber' : ''}`}></span>
+      <span className="dot"></span>
       <span>{label}</span>
-      <strong>{warning ? 'CHECK' : 'ONLINE'}</strong>
+      <strong>ONLINE</strong>
     </div>
   )
 }
+
+/* =========================================================
+   HEADER
+   ========================================================= */
 
 function Header({ page }) {
   return (
     <header className="topbar">
       <div>
-        <div className="page-kicker">SENTINELAI / COMMAND CENTER</div>
+        <div className="page-kicker">
+          SENTINELAI / COMMAND CENTER
+        </div>
 
         <h1>
           {page === 'dashboard'
@@ -96,13 +125,17 @@ function Header({ page }) {
   )
 }
 
+/* =========================================================
+   RISK PANEL
+   ========================================================= */
+
 function RiskPanel({ incident }) {
-  const score = incident?.risk_score ?? 0
+  const score = Number(incident?.risk_score || 0)
 
   const level =
-    score >= 61
+    score >= 70
       ? 'HIGH'
-      : score >= 31
+      : score >= 50
         ? 'MEDIUM'
         : 'LOW'
 
@@ -110,7 +143,10 @@ function RiskPanel({ incident }) {
     <section className="card risk-card">
       <div className="section-head">
         <div>
-          <div className="eyebrow">EXPLAINABLE AI</div>
+          <div className="eyebrow">
+            EXPLAINABLE AI
+          </div>
+
           <h2>Risk assessment</h2>
         </div>
 
@@ -120,12 +156,21 @@ function RiskPanel({ incident }) {
       </div>
 
       <div className="risk-score">
-        <div className="score-number">{score}</div>
-        <div className="score-total">/100</div>
+        <div className="score-number">
+          {score}
+        </div>
+
+        <div className="score-total">
+          /100
+        </div>
       </div>
 
       <div className="risk-meter">
-        <div style={{ width: `${score}%` }} />
+        <div
+          style={{
+            width: `${score}%`
+          }}
+        />
       </div>
 
       <div className="risk-factors">
@@ -136,12 +181,20 @@ function RiskPanel({ incident }) {
 
         <RiskFactor
           label="Night context"
-          value={incident && score >= 60 ? '+20' : '+0'}
+          value={
+            incident?.risk_score >= 60
+              ? '+20'
+              : '+0'
+          }
         />
 
         <RiskFactor
           label="Persistence"
-          value={incident?.duration >= 10 ? '+15' : '+0'}
+          value={
+            Number(incident?.duration || 0) >= 10
+              ? '+15'
+              : '+0'
+          }
         />
       </div>
     </section>
@@ -158,20 +211,26 @@ function RiskFactor({ label, value }) {
 }
 
 /* =========================================================
-   LIVE CAMERA + YOLO DETECTION
+   LIVE CAMERA
    ========================================================= */
 
 function LiveCamera() {
   const videoRef = useRef(null)
   const overlayRef = useRef(null)
   const detectingRef = useRef(false)
-  const violationRef = useRef(false)
 
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [detections, setDetections] = useState([])
-  const [detectionStatus, setDetectionStatus] = useState('WAITING')
-  const [fenceViolation, setFenceViolation] = useState(false)
+  const [detectionStatus, setDetectionStatus] =
+    useState('WAITING')
+
+  const [zone, setZone] = useState(null)
+  const [intrusion, setIntrusion] = useState(false)
+
+  /* ---------------------------------------------------------
+     CAMERA
+     --------------------------------------------------------- */
 
   const startCamera = async () => {
     try {
@@ -205,9 +264,11 @@ function LiveCamera() {
         setCameraOn(true)
         setDetectionStatus('WAITING')
       }
-
     } catch (error) {
-      console.error('Camera access error:', error)
+      console.error(
+        'Camera access error:',
+        error
+      )
 
       setCameraError(
         error.name === 'NotAllowedError'
@@ -219,10 +280,14 @@ function LiveCamera() {
     }
   }
 
-  const detectFrame = async () => {
-    if (!videoRef.current) return
+  /* ---------------------------------------------------------
+     SEND FRAME TO BACKEND
+     --------------------------------------------------------- */
 
+  const detectFrame = async () => {
     const video = videoRef.current
+
+    if (!video) return
 
     if (
       video.videoWidth === 0 ||
@@ -234,6 +299,7 @@ function LiveCamera() {
     if (detectingRef.current) return
 
     detectingRef.current = true
+
     setDetectionStatus('PROCESSING')
 
     const canvas =
@@ -242,11 +308,11 @@ function LiveCamera() {
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
 
-    const ctx = canvas.getContext('2d')
+    const ctx =
+      canvas.getContext('2d')
 
     if (!ctx) {
       detectingRef.current = false
-      setDetectionStatus('WAITING')
       return
     }
 
@@ -259,24 +325,22 @@ function LiveCamera() {
     )
 
     canvas.toBlob(
-      async (blob) => {
+      async blob => {
         if (!blob) {
           detectingRef.current = false
-          setDetectionStatus('WAITING')
           return
         }
 
         try {
-          const response = await fetch(
-            `${API}/detect`,
-            {
+          const response =
+            await fetch(`${API}/detect`, {
               method: 'POST',
               headers: {
-                'Content-Type': 'image/jpeg'
+                'Content-Type':
+                  'image/jpeg'
               },
               body: blob
-            }
-          )
+            })
 
           if (!response.ok) {
             throw new Error(
@@ -284,113 +348,28 @@ function LiveCamera() {
             )
           }
 
-          const data = await response.json()
+          const data =
+            await response.json()
 
-          if (!data.success) {
-            console.error(
-              'YOLO detection failed:',
-              data.error
+          if (data.success) {
+            setDetections(
+              Array.isArray(data.detections)
+                ? data.detections
+                : []
+            )
+
+            if (data.zone) {
+              setZone(data.zone)
+            }
+
+            setIntrusion(
+              Boolean(
+                data.intrusion_detected
+              )
             )
 
             setDetectionStatus('ONLINE')
-            return
           }
-
-          const newDetections =
-            Array.isArray(data.detections)
-              ? data.detections
-              : []
-
-          setDetections(newDetections)
-          setDetectionStatus('ONLINE')
-
-          /*
-           * =========================================
-           * VIRTUAL FENCE
-           * =========================================
-           *
-           * Coordinates are based on the ORIGINAL
-           * webcam frame returned to YOLO.
-           *
-           * Restricted zone:
-           *
-           * X: 25% -> 75%
-           * Y: 20% -> 85%
-           */
-
-          const frameWidth =
-            video.videoWidth
-
-          const frameHeight =
-            video.videoHeight
-
-          const fence = {
-            x1: frameWidth * 0.25,
-            y1: frameHeight * 0.20,
-            x2: frameWidth * 0.75,
-            y2: frameHeight * 0.85
-          }
-
-          let violation = false
-
-          newDetections.forEach(
-            (detection) => {
-
-              if (
-                detection.label !== 'person'
-              ) {
-                return
-              }
-
-              if (
-                !Array.isArray(
-                  detection.box
-                )
-              ) {
-                return
-              }
-
-              const [
-                x1,
-                y1,
-                x2,
-                y2
-              ] = detection.box
-
-              /*
-               * Use the bottom-center of the
-               * person's bounding box.
-               *
-               * This is generally more useful
-               * for a virtual ground/floor zone
-               * than using the center of the body.
-               */
-
-              const personX =
-                (x1 + x2) / 2
-
-              const personY =
-                y2
-
-              const insideFence =
-                personX >= fence.x1 &&
-                personX <= fence.x2 &&
-                personY >= fence.y1 &&
-                personY <= fence.y2
-
-              if (insideFence) {
-                violation = true
-              }
-            }
-          )
-
-          violationRef.current =
-            violation
-
-          setFenceViolation(
-            violation
-          )
-
         } catch (error) {
           console.error(
             'YOLO detection error:',
@@ -405,24 +384,24 @@ function LiveCamera() {
     )
   }
 
-  /*
-   * =========================================
-   * CAMERA + DETECTION LOOP
-   * =========================================
-   */
+  /* ---------------------------------------------------------
+     CAMERA + DETECTION LOOP
+     --------------------------------------------------------- */
 
   useEffect(() => {
     startCamera()
 
-    const detectionTimer =
+    /*
+      1000ms gives a much better balance between:
+      webcam responsiveness and Render/YOLO processing.
+    */
+    const timer =
       setInterval(() => {
         detectFrame()
-      }, 3000)
+      }, 1000)
 
     return () => {
-      clearInterval(
-        detectionTimer
-      )
+      clearInterval(timer)
 
       const stream =
         videoRef.current?.srcObject
@@ -430,26 +409,21 @@ function LiveCamera() {
       if (stream) {
         stream
           .getTracks()
-          .forEach(
-            track =>
-              track.stop()
+          .forEach(track =>
+            track.stop()
           )
       }
     }
   }, [])
 
-  /*
-   * =========================================
-   * DRAW YOLO + VIRTUAL FENCE
-   * =========================================
-   */
+  /* ---------------------------------------------------------
+     DRAW OVERLAY
+     --------------------------------------------------------- */
 
   useEffect(() => {
-
     let animationFrame
 
     const drawOverlay = () => {
-
       const video =
         videoRef.current
 
@@ -508,18 +482,8 @@ function LiveCamera() {
       )
 
       /*
-       * =========================================
-       * VIDEO OBJECT-FIT: COVER CALCULATION
-       * =========================================
-       *
-       * Your existing video uses objectFit:
-       * cover.
-       *
-       * Therefore the visible video can be
-       * cropped. We calculate the correct scale
-       * and offset so YOLO boxes line up with
-       * the visible webcam image.
-       */
+        Video uses object-fit: cover.
+      */
 
       const scale =
         Math.max(
@@ -543,134 +507,117 @@ function LiveCamera() {
 
       const toDisplayX =
         value =>
-          value * scale +
-          offsetX
+          value * scale + offsetX
 
       const toDisplayY =
         value =>
-          value * scale +
-          offsetY
-
-      /*
-       * =========================================
-       * VIRTUAL FENCE
-       * =========================================
-       */
-
-      const fenceX1 =
-        toDisplayX(
-          videoWidth * 0.25
-        )
-
-      const fenceY1 =
-        toDisplayY(
-          videoHeight * 0.20
-        )
-
-      const fenceX2 =
-        toDisplayX(
-          videoWidth * 0.75
-        )
-
-      const fenceY2 =
-        toDisplayY(
-          videoHeight * 0.85
-        )
-
-      const fenceWidth =
-        fenceX2 - fenceX1
-
-      const fenceHeight =
-        fenceY2 - fenceY1
+          value * scale + offsetY
 
       ctx.save()
 
-      ctx.lineWidth = 4
+      /* -------------------------------------------------------
+         RESTRICTED ZONE
+      ------------------------------------------------------- */
 
-      ctx.setLineDash([
-        12,
-        8
-      ])
+      if (zone) {
+        const zx1 =
+          toDisplayX(zone.x1)
 
-      ctx.strokeStyle =
-        fenceViolation
-          ? '#ef4444'
-          : '#22c55e'
+        const zy1 =
+          toDisplayY(zone.y1)
 
-      ctx.fillStyle =
-        fenceViolation
-          ? 'rgba(239,68,68,0.08)'
-          : 'rgba(34,197,94,0.06)'
+        const zx2 =
+          toDisplayX(zone.x2)
 
-      ctx.fillRect(
-        fenceX1,
-        fenceY1,
-        fenceWidth,
-        fenceHeight
-      )
+        const zy2 =
+          toDisplayY(zone.y2)
 
-      ctx.strokeRect(
-        fenceX1,
-        fenceY1,
-        fenceWidth,
-        fenceHeight
-      )
+        const zoneWidth =
+          zx2 - zx1
 
-      ctx.setLineDash([])
+        const zoneHeight =
+          zy2 - zy1
 
-      /*
-       * Fence label
-       */
+        ctx.lineWidth = 4
 
-      const fenceLabel =
-        fenceViolation
-          ? 'INTRUSION ZONE'
-          : 'RESTRICTED ZONE'
+        ctx.setLineDash([
+          12,
+          8
+        ])
 
-      ctx.font =
-        'bold 15px Arial'
+        ctx.strokeStyle =
+          intrusion
+            ? '#ef4444'
+            : '#22c55e'
 
-      const labelWidth =
-        ctx.measureText(
-          fenceLabel
-        ).width
+        ctx.fillStyle =
+          intrusion
+            ? 'rgba(239,68,68,0.10)'
+            : 'rgba(34,197,94,0.06)'
 
-      ctx.fillStyle =
-        fenceViolation
-          ? '#ef4444'
-          : '#22c55e'
-
-      ctx.fillRect(
-        fenceX1,
-        Math.max(
-          0,
-          fenceY1 - 30
-        ),
-        labelWidth + 20,
-        28
-      )
-
-      ctx.fillStyle =
-        '#ffffff'
-
-      ctx.fillText(
-        fenceLabel,
-        fenceX1 + 10,
-        Math.max(
-          19,
-          fenceY1 - 11
+        ctx.fillRect(
+          zx1,
+          zy1,
+          zoneWidth,
+          zoneHeight
         )
-      )
 
-      /*
-       * =========================================
-       * YOLO BOUNDING BOXES
-       * =========================================
-       */
+        ctx.strokeRect(
+          zx1,
+          zy1,
+          zoneWidth,
+          zoneHeight
+        )
+
+        ctx.setLineDash([])
+
+        const zoneLabel =
+          intrusion
+            ? '⚠ INTRUSION ZONE'
+            : 'RESTRICTED ZONE'
+
+        ctx.font =
+          'bold 15px Arial'
+
+        const labelWidth =
+          ctx.measureText(
+            zoneLabel
+          ).width
+
+        ctx.fillStyle =
+          intrusion
+            ? '#ef4444'
+            : '#22c55e'
+
+        ctx.fillRect(
+          zx1,
+          Math.max(
+            0,
+            zy1 - 30
+          ),
+          labelWidth + 24,
+          28
+        )
+
+        ctx.fillStyle =
+          '#ffffff'
+
+        ctx.fillText(
+          zoneLabel,
+          zx1 + 10,
+          Math.max(
+            19,
+            zy1 - 11
+          )
+        )
+      }
+
+      /* -------------------------------------------------------
+         PERSON BOXES
+      ------------------------------------------------------- */
 
       detections.forEach(
         detection => {
-
           if (
             !Array.isArray(
               detection.box
@@ -704,43 +651,37 @@ function LiveCamera() {
           const boxHeight =
             boxY2 - boxY1
 
-          const isPerson =
-            detection.label ===
-            'person'
+          const status =
+            String(
+              detection.zone_status ||
+              'OUTSIDE'
+            ).toUpperCase()
 
-          /*
-           * Determine whether THIS
-           * person is inside the fence.
-           */
+          const isDanger =
+            status === 'ENTERED' ||
+            status === 'INSIDE'
 
-          let personInside =
-            false
+          const isApproaching =
+            status === 'APPROACHING'
 
-          if (isPerson) {
+          let boxColor =
+            '#00e5ff'
 
-            const personX =
-              (x1 + x2) / 2
-
-            const personY =
-              y2
-
-            personInside =
-              personX >=
-                videoWidth * 0.25 &&
-              personX <=
-                videoWidth * 0.75 &&
-              personY >=
-                videoHeight * 0.20 &&
-              personY <=
-                videoHeight * 0.85
+          if (isDanger) {
+            boxColor = '#ef4444'
+          } else if (
+            isApproaching
+          ) {
+            boxColor = '#f59e0b'
+          } else if (
+            status === 'EXITED'
+          ) {
+            boxColor = '#22c55e'
           }
 
-          ctx.strokeStyle =
-            personInside
-              ? '#ef4444'
-              : '#00e5ff'
-
           ctx.lineWidth = 3
+          ctx.strokeStyle =
+            boxColor
 
           ctx.strokeRect(
             boxX1,
@@ -749,9 +690,9 @@ function LiveCamera() {
             boxHeight
           )
 
-          /*
-           * Detection label
-           */
+          /* ---------------------------------------------------
+             PERSON LABEL
+          --------------------------------------------------- */
 
           const confidence =
             Math.round(
@@ -760,32 +701,34 @@ function LiveCamera() {
               ) * 100
             )
 
-          const label =
-            `${detection.label} ${confidence}%`
+          const track =
+            detection.track_id ??
+            '?'
+
+          const personLabel =
+            `PERSON #${track} • ${confidence}%`
 
           ctx.font =
-            'bold 14px Arial'
+            'bold 13px Arial'
 
-          const textWidth =
+          const personTextWidth =
             ctx.measureText(
-              label
+              personLabel
             ).width
 
           const labelY =
             Math.max(
               0,
-              boxY1 - 26
+              boxY1 - 29
             )
 
           ctx.fillStyle =
-            personInside
-              ? '#ef4444'
-              : '#00a8cc'
+            boxColor
 
           ctx.fillRect(
             boxX1,
             labelY,
-            textWidth + 14,
+            personTextWidth + 14,
             25
           )
 
@@ -793,11 +736,78 @@ function LiveCamera() {
             '#ffffff'
 
           ctx.fillText(
-            label,
+            personLabel,
             boxX1 + 7,
             labelY + 17
           )
 
+          /* ---------------------------------------------------
+             ZONE STATUS LABEL
+          --------------------------------------------------- */
+
+          let statusText =
+            '✓ OUTSIDE RESTRICTED ZONE'
+
+          if (
+            status === 'APPROACHING'
+          ) {
+            statusText =
+              '⚠ APPROACHING ZONE'
+          }
+
+          if (
+            status === 'ENTERED'
+          ) {
+            statusText =
+              '🚨 ENTERED RESTRICTED ZONE'
+          }
+
+          if (
+            status === 'INSIDE'
+          ) {
+            statusText =
+              '🚨 INSIDE RESTRICTED ZONE'
+          }
+
+          if (
+            status === 'EXITED'
+          ) {
+            statusText =
+              '✓ EXITED RESTRICTED ZONE'
+          }
+
+          ctx.font =
+            'bold 12px Arial'
+
+          const statusWidth =
+            ctx.measureText(
+              statusText
+            ).width
+
+          const statusY =
+            Math.min(
+              displayHeight - 24,
+              boxY2 + 5
+            )
+
+          ctx.fillStyle =
+            boxColor
+
+          ctx.fillRect(
+            boxX1,
+            statusY,
+            statusWidth + 14,
+            21
+          )
+
+          ctx.fillStyle =
+            '#ffffff'
+
+          ctx.fillText(
+            statusText,
+            boxX1 + 7,
+            statusY + 15
+          )
         }
       )
 
@@ -814,30 +824,38 @@ function LiveCamera() {
         drawOverlay
       )
 
-    return () => {
+    return () =>
       cancelAnimationFrame(
         animationFrame
       )
-    }
-
   }, [
     detections,
-    fenceViolation
+    zone,
+    intrusion
   ])
 
-  /*
-   * =========================================
-   * UI
-   * =========================================
-   */
+  /* ---------------------------------------------------------
+     CURRENT EVENT SUMMARY
+  --------------------------------------------------------- */
+
+  const importantDetection =
+    detections.find(
+      d =>
+        d.zone_status ===
+          'ENTERED' ||
+        d.zone_status ===
+          'INSIDE' ||
+        d.zone_status ===
+          'APPROACHING' ||
+        d.zone_status ===
+          'EXITED'
+    )
 
   return (
     <section className="card camera-card">
 
       <div className="section-head">
-
         <div>
-
           <div className="eyebrow">
             LIVE SURVEILLANCE
           </div>
@@ -845,19 +863,15 @@ function LiveCamera() {
           <h2>
             Camera C04
           </h2>
-
         </div>
 
         <span className="camera-live">
-
           <span className="dot"></span>
 
           {cameraOn
             ? 'LIVE'
             : 'WAITING'}
-
         </span>
-
       </div>
 
       <div
@@ -883,8 +897,6 @@ function LiveCamera() {
           }}
         />
 
-        {/* YOLO + VIRTUAL FENCE OVERLAY */}
-
         <canvas
           ref={overlayRef}
           style={{
@@ -899,7 +911,6 @@ function LiveCamera() {
 
         {!cameraOn && (
           <div className="video-overlay">
-
             <div className="video-icon">
               ◉
             </div>
@@ -927,18 +938,17 @@ function LiveCamera() {
                 ALLOW CAMERA
               </button>
             )}
-
           </div>
         )}
-
-        {/* CAMERA LABELS */}
 
         <div className="camera-overlay top-left">
           CAM C04
         </div>
 
         <div className="camera-overlay top-right">
-          1280 × 720
+          {videoRef.current?.videoWidth || 1280}
+          {' × '}
+          {videoRef.current?.videoHeight || 720}
         </div>
 
         <div className="camera-overlay bottom-left">
@@ -947,7 +957,7 @@ function LiveCamera() {
             : 'CAMERA OFFLINE'}
         </div>
 
-        {/* YOLO STATUS */}
+        {/* AI STATUS */}
 
         {cameraOn && (
           <div
@@ -957,110 +967,127 @@ function LiveCamera() {
               left: '12px',
               zIndex: 20,
               background:
-                'rgba(0,0,0,0.80)',
+                'rgba(0,0,0,0.82)',
               color: '#fff',
               padding:
                 '10px 14px',
               borderRadius: '8px',
-              minWidth: '170px',
-              fontSize: '13px',
+              minWidth: '190px',
+              fontSize: '12px',
               backdropFilter:
-                'blur(4px)'
+                'blur(5px)'
             }}
           >
 
             <div
               style={{
-                fontWeight: 700,
-                marginBottom: '6px'
+                fontWeight: 800,
+                marginBottom: '7px'
               }}
             >
-              YOLO DETECTION
+              SENTINEL AI
             </div>
 
             <div
               style={{
-                fontSize: '11px',
                 opacity: 0.75,
-                marginBottom: '7px'
+                marginBottom: '8px'
               }}
             >
-              STATUS: {detectionStatus}
+              YOLOv8n • ByteTrack
             </div>
 
-            {detections.length === 0 ? (
+            <div>
+              STATUS:{' '}
+              <strong>
+                {detectionStatus}
+              </strong>
+            </div>
 
-              <div
-                style={{
-                  opacity: 0.8
-                }}
-              >
-                No objects detected
-              </div>
-
-            ) : (
-
-              detections.map(
-                (detection, index) => (
-
-                  <div
-                    key={index}
-                    style={{
-                      marginTop: '4px'
-                    }}
-                  >
-
-                    <strong>
-                      {detection.label}
-                    </strong>
-
-                    {' — '}
-
-                    {(
-                      Number(
-                        detection.confidence
-                      ) * 100
-                    ).toFixed(1)}
-
-                    %
-
-                  </div>
-
-                )
-              )
-
-            )}
+            <div>
+              PERSONS:{' '}
+              <strong>
+                {detections.length}
+              </strong>
+            </div>
 
           </div>
         )}
 
-        {/* VIRTUAL FENCE STATUS */}
+        {/* EVENT PANEL */}
 
         {cameraOn && (
           <div
             style={{
               position: 'absolute',
-              top: '50px',
               right: '12px',
+              top: '50px',
               zIndex: 20,
-              padding:
-                '9px 13px',
-              borderRadius: '8px',
               background:
-                fenceViolation
-                  ? 'rgba(239,68,68,0.95)'
-                  : 'rgba(34,197,94,0.95)',
+                importantDetection
+                  ? importantDetection.zone_status ===
+                      'ENTERED' ||
+                    importantDetection.zone_status ===
+                      'INSIDE'
+                    ? 'rgba(180,0,0,0.94)'
+                    : 'rgba(160,100,0,0.94)'
+                  : 'rgba(0,100,60,0.92)',
               color: '#fff',
-              fontWeight: 800,
+              padding:
+                '10px 13px',
+              borderRadius: '8px',
+              minWidth: '190px',
               fontSize: '12px',
               boxShadow:
-                '0 4px 12px rgba(0,0,0,0.25)'
+                '0 5px 18px rgba(0,0,0,0.25)'
             }}
           >
 
-            {fenceViolation
-              ? '🚨 INTRUSION DETECTED'
-              : '🟢 ZONE SECURE'}
+            <div
+              style={{
+                fontWeight: 900,
+                marginBottom: '6px'
+              }}
+            >
+              {importantDetection
+                ? importantDetection.zone_status ===
+                    'ENTERED'
+                  ? '🚨 ENTRY DETECTED'
+                  : importantDetection.zone_status ===
+                      'INSIDE'
+                    ? '🚨 INTRUSION ACTIVE'
+                    : importantDetection.zone_status ===
+                        'APPROACHING'
+                      ? '⚠ APPROACHING'
+                      : '✓ EXIT DETECTED'
+                : '✓ ZONE SECURE'}
+            </div>
+
+            {importantDetection && (
+              <>
+                <div>
+                  PERSON #
+                  {importantDetection.track_id}
+                </div>
+
+                <div>
+                  MOVEMENT:{' '}
+                  {importantDetection.movement}
+                </div>
+
+                <div>
+                  DURATION:{' '}
+                  {importantDetection.duration}s
+                </div>
+
+                <div>
+                  RISK:{' '}
+                  {importantDetection.risk_score}
+                  {' '}
+                  ({importantDetection.risk_level})
+                </div>
+              </>
+            )}
 
           </div>
         )}
@@ -1089,6 +1116,86 @@ function LiveCamera() {
 
       </div>
 
+      {/* LIVE DETECTION DETAILS */}
+
+      {detections.length > 0 && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns:
+              'repeat(auto-fit,minmax(180px,1fr))',
+            gap: '8px',
+            marginTop: '12px'
+          }}
+        >
+
+          {detections.map(
+            detection => (
+              <div
+                key={
+                  detection.track_id
+                }
+                style={{
+                  border:
+                    '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '8px',
+                  padding: '9px 10px',
+                  background:
+                    'rgba(0,0,0,0.12)'
+                }}
+              >
+
+                <strong>
+                  PERSON #
+                  {detection.track_id}
+                </strong>
+
+                <div
+                  style={{
+                    fontSize: '11px',
+                    marginTop: '4px'
+                  }}
+                >
+                  STATE:{' '}
+                  {detection.zone_status}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '11px'
+                  }}
+                >
+                  MOVEMENT:{' '}
+                  {detection.movement}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '11px'
+                  }}
+                >
+                  TIME:{' '}
+                  {detection.duration}s
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '11px'
+                  }}
+                >
+                  RISK:{' '}
+                  {detection.risk_score}
+                  {' '}
+                  {detection.risk_level}
+                </div>
+
+              </div>
+            )
+          )}
+
+        </div>
+      )}
+
       <div className="camera-stats">
 
         <Stat
@@ -1111,8 +1218,8 @@ function LiveCamera() {
         />
 
         <Stat
-          label="DETECTION"
-          value={detectionStatus}
+          label="TRACKER"
+          value="ByteTrack"
         />
 
       </div>
@@ -1141,7 +1248,6 @@ function IncidentCard({
   if (!incident) {
     return (
       <section className="card incident-card empty">
-
         <div className="empty-icon">
           ✓
         </div>
@@ -1150,13 +1256,14 @@ function IncidentCard({
           ACTIVE INCIDENT
         </div>
 
-        <h2>Area secure</h2>
+        <h2>
+          Area secure
+        </h2>
 
         <p>
           No active incident is currently
           being reported by the backend.
         </p>
-
       </section>
     )
   }
@@ -1198,7 +1305,8 @@ function IncidentCard({
           </strong>
 
           <span>
-            {incident.camera} •{' '}
+            {incident.camera}
+            {' • '}
             {incident.zone}
           </span>
         </div>
@@ -1223,8 +1331,18 @@ function IncidentCard({
         />
 
         <Detail
+          label="Risk"
+          value={`${incident.risk_score}/100`}
+        />
+
+        <Detail
           label="Time"
           value={incident.created_at}
+        />
+
+        <Detail
+          label="Status"
+          value={incident.status}
         />
 
       </div>
@@ -1279,19 +1397,19 @@ function CameraNetwork() {
     <section className="card network-card">
 
       <div className="section-head">
-
         <div>
           <div className="eyebrow">
             SURVEILLANCE NETWORK
           </div>
 
-          <h2>Camera network</h2>
+          <h2>
+            Camera network
+          </h2>
         </div>
 
         <span className="muted">
           3 nodes
         </span>
-
       </div>
 
       <div className="camera-list">
@@ -1333,7 +1451,6 @@ function CameraNode({
       </div>
 
       <div className="node-info">
-
         <strong>{id}</strong>
 
         <span>
@@ -1341,7 +1458,6 @@ function CameraNode({
             ? 'Primary browser webcam'
             : 'Prototype node'}
         </span>
-
       </div>
 
       <div
@@ -1366,21 +1482,22 @@ function CameraNode({
    ========================================================= */
 
 function Timeline({ incidents }) {
-  const rows = incidents.slice(0, 5)
+  const rows =
+    incidents.slice(0, 5)
 
   return (
     <section className="card timeline-card">
 
       <div className="section-head">
-
         <div>
           <div className="eyebrow">
             EVENT HISTORY
           </div>
 
-          <h2>Incident timeline</h2>
+          <h2>
+            Incident timeline
+          </h2>
         </div>
-
       </div>
 
       {rows.length === 0 ? (
@@ -1414,13 +1531,16 @@ function Timeline({ incidents }) {
                   </span>
 
                   <strong>
-                    Incident #{item.id} —{' '}
+                    Incident #{item.id}
+                    {' — '}
                     {item.type}
                   </strong>
 
                   <span>
-                    {item.camera} •{' '}
-                    {item.zone} • Risk{' '}
+                    {item.camera}
+                    {' • '}
+                    {item.zone}
+                    {' • Risk '}
                     {item.risk_score}
                   </span>
 
@@ -1450,7 +1570,8 @@ function Overview({
 
     const high =
       incidents.filter(
-        i => i.risk_level === 'HIGH'
+        i =>
+          i.risk_level === 'HIGH'
       ).length
 
     const pending =
@@ -1482,7 +1603,7 @@ function Overview({
         <Metric
           label="HIGH RISK"
           value={stats.high}
-          sub="Risk score ≥ 61"
+          sub="Risk score ≥ 70"
           danger
         />
 
@@ -1624,7 +1745,8 @@ function IncidentsPage({
                 <td>
                   <span
                     className={`badge small ${String(
-                      i.risk_level || 'LOW'
+                      i.risk_level ||
+                      'LOW'
                     ).toLowerCase()}`}
                   >
                     {i.risk_score}
@@ -1643,7 +1765,9 @@ function IncidentsPage({
 
                   {String(i.status)
                     .toLowerCase()
-                    .includes('awaiting') ? (
+                    .includes(
+                      'awaiting'
+                    ) ? (
 
                     <div className="table-actions">
 
@@ -1754,6 +1878,10 @@ function CamerasPage() {
   )
 }
 
+/* =========================================================
+   TIMELINE PAGE
+   ========================================================= */
+
 function TimelinePage({
   incidents
 }) {
@@ -1765,7 +1893,7 @@ function TimelinePage({
 }
 
 /* =========================================================
-   ANALYTICS PAGE
+   ANALYTICS
    ========================================================= */
 
 function AnalyticsPage({
@@ -1798,20 +1926,20 @@ function AnalyticsPage({
       <Metric
         label="HIGH RISK"
         value={high}
-        sub="Risk score ≥ 61"
+        sub="Risk score ≥ 70"
         danger
       />
 
       <Metric
         label="MEDIUM RISK"
         value={medium}
-        sub="Risk score 31–60"
+        sub="Risk score 50–69"
       />
 
       <Metric
         label="LOW RISK"
         value={low}
-        sub="Risk score ≤ 30"
+        sub="Risk score < 50"
       />
 
       <section className="card page-card chart-card">
@@ -1824,73 +1952,58 @@ function AnalyticsPage({
           Current incident profile
         </h2>
 
-        <div className="bar-row">
+        <RiskBar
+          label="HIGH"
+          value={high}
+          total={incidents.length}
+        />
 
-          <span>HIGH</span>
+        <RiskBar
+          label="MEDIUM"
+          value={medium}
+          total={incidents.length}
+        />
 
-          <div>
-            <i
-              style={{
-                width: `${
-                  incidents.length
-                    ? high /
-                      incidents.length *
-                      100
-                    : 0
-                }%`
-              }}
-            ></i>
-          </div>
-
-          <strong>{high}</strong>
-
-        </div>
-
-        <div className="bar-row">
-
-          <span>MEDIUM</span>
-
-          <div>
-            <i
-              style={{
-                width: `${
-                  incidents.length
-                    ? medium /
-                      incidents.length *
-                      100
-                    : 0
-                }%`
-              }}
-            ></i>
-          </div>
-
-          <strong>{medium}</strong>
-
-        </div>
-
-        <div className="bar-row">
-
-          <span>LOW</span>
-
-          <div>
-            <i
-              style={{
-                width: `${
-                  incidents.length
-                    ? low /
-                      incidents.length *
-                      100
-                    : 0
-                }%`
-              }}
-            ></i>
-          </div>
-
-          <strong>{low}</strong>
-
-        </div>
+        <RiskBar
+          label="LOW"
+          value={low}
+          total={incidents.length}
+        />
 
       </section>
+
+    </div>
+  )
+}
+
+function RiskBar({
+  label,
+  value,
+  total
+}) {
+  const percentage =
+    total
+      ? (value / total) * 100
+      : 0
+
+  return (
+    <div className="bar-row">
+
+      <span>
+        {label}
+      </span>
+
+      <div>
+        <i
+          style={{
+            width: `${percentage}%`
+          }}
+        ></i>
+      </div>
+
+      <strong>
+        {value}
+      </strong>
 
     </div>
   )
@@ -1901,6 +2014,7 @@ function AnalyticsPage({
    ========================================================= */
 
 export default function App() {
+
   const [page, setPage] =
     useState('dashboard')
 
@@ -1913,8 +2027,14 @@ export default function App() {
   const [apiOnline, setApiOnline] =
     useState(false)
 
+  /* ---------------------------------------------------------
+     LOAD REAL INCIDENTS
+  --------------------------------------------------------- */
+
   async function loadIncidents() {
+
     try {
+
       const response =
         await fetch(
           `${API}/incidents`
@@ -1929,9 +2049,17 @@ export default function App() {
       const data =
         await response.json()
 
-      setIncidents(data)
+      setIncidents(
+        Array.isArray(data)
+          ? data
+          : []
+      )
 
-      setActiveIncident(
+      /*
+        Most recent pending incident.
+      */
+
+      const pending =
         data.find(
           i =>
             String(i.status)
@@ -1939,7 +2067,10 @@ export default function App() {
               .includes(
                 'awaiting'
               )
-        ) || null
+        )
+
+      setActiveIncident(
+        pending || null
       )
 
       setApiOnline(true)
@@ -1956,10 +2087,15 @@ export default function App() {
     }
   }
 
+  /* ---------------------------------------------------------
+     VERIFY / DISMISS
+  --------------------------------------------------------- */
+
   async function handleAction(
     action,
     id
   ) {
+
     try {
 
       const response =
@@ -1983,10 +2119,14 @@ export default function App() {
       console.error(error)
 
       alert(
-        'Backend action failed. Make sure FastAPI is running.'
+        'Backend action failed.'
       )
     }
   }
+
+  /* ---------------------------------------------------------
+     DATABASE POLLING
+  --------------------------------------------------------- */
 
   useEffect(() => {
 
@@ -2002,6 +2142,10 @@ export default function App() {
       clearInterval(timer)
 
   }, [])
+
+  /* ---------------------------------------------------------
+     UI
+  --------------------------------------------------------- */
 
   return (
     <div className="app-shell">
@@ -2029,7 +2173,7 @@ export default function App() {
 
           {apiOnline
             ? 'FastAPI backend connected • SQLite synchronized'
-            : 'FastAPI backend not connected • showing dashboard shell'}
+            : 'FastAPI backend not connected'}
 
         </div>
 
