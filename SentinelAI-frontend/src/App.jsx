@@ -138,7 +138,7 @@ function LiveCamera() {
   const [cameraError, setCameraError] = useState('')
   const [detections, setDetections] = useState([])
   const detectFrame = async () => {
-  if (!videoRef.current || !cameraOn) return
+  if (!videoRef.current) return
 
   const video = videoRef.current
 
@@ -208,16 +208,22 @@ function LiveCamera() {
   }
 
   useEffect(() => {
-    startCamera()
+  startCamera()
 
-    return () => {
-      const stream = videoRef.current?.srcObject
+  const detectionTimer = setInterval(() => {
+    detectFrame()
+  }, 2000)
 
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop())
-      }
+  return () => {
+    clearInterval(detectionTimer)
+
+    const stream = videoRef.current?.srcObject
+
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop())
     }
-  }, [])
+  }
+}, [])
 
   return (
     <section className="card camera-card">
