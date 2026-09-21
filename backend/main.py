@@ -1,7 +1,7 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from database import get_connection, create_table
 from datetime import datetime
-
 
 app = FastAPI(
     title="SentinelAI API",
