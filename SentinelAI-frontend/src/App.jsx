@@ -398,7 +398,7 @@ function LiveCamera() {
     const timer =
       setInterval(() => {
         detectFrame()
-      }, 1000)
+      }, 3000)
 
     return () => {
       clearInterval(timer)
