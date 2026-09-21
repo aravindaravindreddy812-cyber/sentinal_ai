@@ -137,6 +137,42 @@ function LiveCamera() {
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [detections, setDetections] = useState([])
+  const detectFrame = async () => {
+  if (!videoRef.current || !cameraOn) return
+
+  const video = videoRef.current
+
+  if (video.videoWidth === 0 || video.videoHeight === 0) return
+
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  canvas.toBlob(async (blob) => {
+    if (!blob) return
+
+    try {
+      const response = await fetch(`${API}/detect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'image/jpeg'
+        },
+        body: blob
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setDetections(data.detections || [])
+      }
+    } catch (error) {
+      console.error('Detection error:', error)
+    }
+  }, 'image/jpeg', 0.7)
+}
 
   const startCamera = async () => {
     try {
