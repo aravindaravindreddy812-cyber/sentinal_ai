@@ -163,12 +163,15 @@ function RiskFactor({ label, value }) {
 
 function LiveCamera() {
   const videoRef = useRef(null)
+  const overlayRef = useRef(null)
   const detectingRef = useRef(false)
+  const violationRef = useRef(false)
 
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [detections, setDetections] = useState([])
   const [detectionStatus, setDetectionStatus] = useState('WAITING')
+  const [fenceViolation, setFenceViolation] = useState(false)
 
   const startCamera = async () => {
     try {
@@ -202,6 +205,7 @@ function LiveCamera() {
         setCameraOn(true)
         setDetectionStatus('WAITING')
       }
+
     } catch (error) {
       console.error('Camera access error:', error)
 
@@ -227,22 +231,13 @@ function LiveCamera() {
       return
     }
 
-    /*
-      Do not start another YOLO request while the
-      previous Render request is still processing.
-    */
     if (detectingRef.current) return
 
     detectingRef.current = true
-
-    /*
-      IMPORTANT:
-      PROCESSING means YOLO is working.
-      It does NOT mean the camera is offline.
-    */
     setDetectionStatus('PROCESSING')
 
-    const canvas = document.createElement('canvas')
+    const canvas =
+      document.createElement('canvas')
 
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
@@ -267,11 +262,7 @@ function LiveCamera() {
       async (blob) => {
         if (!blob) {
           detectingRef.current = false
-
-          /*
-            Keep the previous successful state instead
-            of showing OFFLINE.
-          */
+          setDetectionStatus('WAITING')
           return
         }
 
@@ -295,38 +286,116 @@ function LiveCamera() {
 
           const data = await response.json()
 
-          if (data.success) {
-            /*
-              Replace detections only when a successful
-              YOLO response arrives.
-            */
-            setDetections(
-              Array.isArray(data.detections)
-                ? data.detections
-                : []
+          if (!data.success) {
+            console.error(
+              'YOLO detection failed:',
+              data.error
             )
 
             setDetectionStatus('ONLINE')
+            return
           }
 
+          const newDetections =
+            Array.isArray(data.detections)
+              ? data.detections
+              : []
+
+          setDetections(newDetections)
+          setDetectionStatus('ONLINE')
+
           /*
-            If the server returns an error, keep the
-            previous detections and status instead of
-            switching the UI to OFFLINE.
-          */
+           * =========================================
+           * VIRTUAL FENCE
+           * =========================================
+           *
+           * Coordinates are based on the ORIGINAL
+           * webcam frame returned to YOLO.
+           *
+           * Restricted zone:
+           *
+           * X: 25% -> 75%
+           * Y: 20% -> 85%
+           */
+
+          const frameWidth =
+            video.videoWidth
+
+          const frameHeight =
+            video.videoHeight
+
+          const fence = {
+            x1: frameWidth * 0.25,
+            y1: frameHeight * 0.20,
+            x2: frameWidth * 0.75,
+            y2: frameHeight * 0.85
+          }
+
+          let violation = false
+
+          newDetections.forEach(
+            (detection) => {
+
+              if (
+                detection.label !== 'person'
+              ) {
+                return
+              }
+
+              if (
+                !Array.isArray(
+                  detection.box
+                )
+              ) {
+                return
+              }
+
+              const [
+                x1,
+                y1,
+                x2,
+                y2
+              ] = detection.box
+
+              /*
+               * Use the bottom-center of the
+               * person's bounding box.
+               *
+               * This is generally more useful
+               * for a virtual ground/floor zone
+               * than using the center of the body.
+               */
+
+              const personX =
+                (x1 + x2) / 2
+
+              const personY =
+                y2
+
+              const insideFence =
+                personX >= fence.x1 &&
+                personX <= fence.x2 &&
+                personY >= fence.y1 &&
+                personY <= fence.y2
+
+              if (insideFence) {
+                violation = true
+              }
+            }
+          )
+
+          violationRef.current =
+            violation
+
+          setFenceViolation(
+            violation
+          )
 
         } catch (error) {
           console.error(
             'YOLO detection error:',
             error
           )
-
-          /*
-            Do NOT show OFFLINE here.
-            The browser camera is still working.
-            Keep the previous successful YOLO result.
-          */
-
         } finally {
           detectingRef.current = false
         }
@@ -336,21 +405,24 @@ function LiveCamera() {
     )
   }
 
+  /*
+   * =========================================
+   * CAMERA + DETECTION LOOP
+   * =========================================
+   */
+
   useEffect(() => {
     startCamera()
 
-    /*
-      YOLO runs once every 3 seconds.
-
-      The webcam itself remains continuous.
-      Only the AI analysis is sampled.
-    */
-    const detectionTimer = setInterval(() => {
-      detectFrame()
-    }, 3000)
+    const detectionTimer =
+      setInterval(() => {
+        detectFrame()
+      }, 3000)
 
     return () => {
-      clearInterval(detectionTimer)
+      clearInterval(
+        detectionTimer
+      )
 
       const stream =
         videoRef.current?.srcObject
@@ -358,28 +430,434 @@ function LiveCamera() {
       if (stream) {
         stream
           .getTracks()
-          .forEach(track => track.stop())
+          .forEach(
+            track =>
+              track.stop()
+          )
       }
     }
   }, [])
+
+  /*
+   * =========================================
+   * DRAW YOLO + VIRTUAL FENCE
+   * =========================================
+   */
+
+  useEffect(() => {
+
+    let animationFrame
+
+    const drawOverlay = () => {
+
+      const video =
+        videoRef.current
+
+      const canvas =
+        overlayRef.current
+
+      if (!video || !canvas) {
+        animationFrame =
+          requestAnimationFrame(
+            drawOverlay
+          )
+        return
+      }
+
+      const displayWidth =
+        video.clientWidth
+
+      const displayHeight =
+        video.clientHeight
+
+      const videoWidth =
+        video.videoWidth
+
+      const videoHeight =
+        video.videoHeight
+
+      if (
+        !displayWidth ||
+        !displayHeight ||
+        !videoWidth ||
+        !videoHeight
+      ) {
+        animationFrame =
+          requestAnimationFrame(
+            drawOverlay
+          )
+        return
+      }
+
+      canvas.width =
+        displayWidth
+
+      canvas.height =
+        displayHeight
+
+      const ctx =
+        canvas.getContext('2d')
+
+      if (!ctx) return
+
+      ctx.clearRect(
+        0,
+        0,
+        displayWidth,
+        displayHeight
+      )
+
+      /*
+       * =========================================
+       * VIDEO OBJECT-FIT: COVER CALCULATION
+       * =========================================
+       *
+       * Your existing video uses objectFit:
+       * cover.
+       *
+       * Therefore the visible video can be
+       * cropped. We calculate the correct scale
+       * and offset so YOLO boxes line up with
+       * the visible webcam image.
+       */
+
+      const scale =
+        Math.max(
+          displayWidth / videoWidth,
+          displayHeight / videoHeight
+        )
+
+      const renderedWidth =
+        videoWidth * scale
+
+      const renderedHeight =
+        videoHeight * scale
+
+      const offsetX =
+        (displayWidth -
+          renderedWidth) / 2
+
+      const offsetY =
+        (displayHeight -
+          renderedHeight) / 2
+
+      const toDisplayX =
+        value =>
+          value * scale +
+          offsetX
+
+      const toDisplayY =
+        value =>
+          value * scale +
+          offsetY
+
+      /*
+       * =========================================
+       * VIRTUAL FENCE
+       * =========================================
+       */
+
+      const fenceX1 =
+        toDisplayX(
+          videoWidth * 0.25
+        )
+
+      const fenceY1 =
+        toDisplayY(
+          videoHeight * 0.20
+        )
+
+      const fenceX2 =
+        toDisplayX(
+          videoWidth * 0.75
+        )
+
+      const fenceY2 =
+        toDisplayY(
+          videoHeight * 0.85
+        )
+
+      const fenceWidth =
+        fenceX2 - fenceX1
+
+      const fenceHeight =
+        fenceY2 - fenceY1
+
+      ctx.save()
+
+      ctx.lineWidth = 4
+
+      ctx.setLineDash([
+        12,
+        8
+      ])
+
+      ctx.strokeStyle =
+        fenceViolation
+          ? '#ef4444'
+          : '#22c55e'
+
+      ctx.fillStyle =
+        fenceViolation
+          ? 'rgba(239,68,68,0.08)'
+          : 'rgba(34,197,94,0.06)'
+
+      ctx.fillRect(
+        fenceX1,
+        fenceY1,
+        fenceWidth,
+        fenceHeight
+      )
+
+      ctx.strokeRect(
+        fenceX1,
+        fenceY1,
+        fenceWidth,
+        fenceHeight
+      )
+
+      ctx.setLineDash([])
+
+      /*
+       * Fence label
+       */
+
+      const fenceLabel =
+        fenceViolation
+          ? 'INTRUSION ZONE'
+          : 'RESTRICTED ZONE'
+
+      ctx.font =
+        'bold 15px Arial'
+
+      const labelWidth =
+        ctx.measureText(
+          fenceLabel
+        ).width
+
+      ctx.fillStyle =
+        fenceViolation
+          ? '#ef4444'
+          : '#22c55e'
+
+      ctx.fillRect(
+        fenceX1,
+        Math.max(
+          0,
+          fenceY1 - 30
+        ),
+        labelWidth + 20,
+        28
+      )
+
+      ctx.fillStyle =
+        '#ffffff'
+
+      ctx.fillText(
+        fenceLabel,
+        fenceX1 + 10,
+        Math.max(
+          19,
+          fenceY1 - 11
+        )
+      )
+
+      /*
+       * =========================================
+       * YOLO BOUNDING BOXES
+       * =========================================
+       */
+
+      detections.forEach(
+        detection => {
+
+          if (
+            !Array.isArray(
+              detection.box
+            )
+          ) {
+            return
+          }
+
+          const [
+            x1,
+            y1,
+            x2,
+            y2
+          ] = detection.box
+
+          const boxX1 =
+            toDisplayX(x1)
+
+          const boxY1 =
+            toDisplayY(y1)
+
+          const boxX2 =
+            toDisplayX(x2)
+
+          const boxY2 =
+            toDisplayY(y2)
+
+          const boxWidth =
+            boxX2 - boxX1
+
+          const boxHeight =
+            boxY2 - boxY1
+
+          const isPerson =
+            detection.label ===
+            'person'
+
+          /*
+           * Determine whether THIS
+           * person is inside the fence.
+           */
+
+          let personInside =
+            false
+
+          if (isPerson) {
+
+            const personX =
+              (x1 + x2) / 2
+
+            const personY =
+              y2
+
+            personInside =
+              personX >=
+                videoWidth * 0.25 &&
+              personX <=
+                videoWidth * 0.75 &&
+              personY >=
+                videoHeight * 0.20 &&
+              personY <=
+                videoHeight * 0.85
+          }
+
+          ctx.strokeStyle =
+            personInside
+              ? '#ef4444'
+              : '#00e5ff'
+
+          ctx.lineWidth = 3
+
+          ctx.strokeRect(
+            boxX1,
+            boxY1,
+            boxWidth,
+            boxHeight
+          )
+
+          /*
+           * Detection label
+           */
+
+          const confidence =
+            Math.round(
+              Number(
+                detection.confidence
+              ) * 100
+            )
+
+          const label =
+            `${detection.label} ${confidence}%`
+
+          ctx.font =
+            'bold 14px Arial'
+
+          const textWidth =
+            ctx.measureText(
+              label
+            ).width
+
+          const labelY =
+            Math.max(
+              0,
+              boxY1 - 26
+            )
+
+          ctx.fillStyle =
+            personInside
+              ? '#ef4444'
+              : '#00a8cc'
+
+          ctx.fillRect(
+            boxX1,
+            labelY,
+            textWidth + 14,
+            25
+          )
+
+          ctx.fillStyle =
+            '#ffffff'
+
+          ctx.fillText(
+            label,
+            boxX1 + 7,
+            labelY + 17
+          )
+
+        }
+      )
+
+      ctx.restore()
+
+      animationFrame =
+        requestAnimationFrame(
+          drawOverlay
+        )
+    }
+
+    animationFrame =
+      requestAnimationFrame(
+        drawOverlay
+      )
+
+    return () => {
+      cancelAnimationFrame(
+        animationFrame
+      )
+    }
+
+  }, [
+    detections,
+    fenceViolation
+  ])
+
+  /*
+   * =========================================
+   * UI
+   * =========================================
+   */
 
   return (
     <section className="card camera-card">
 
       <div className="section-head">
+
         <div>
+
           <div className="eyebrow">
             LIVE SURVEILLANCE
           </div>
 
-          <h2>Camera C04</h2>
+          <h2>
+            Camera C04
+          </h2>
+
         </div>
 
         <span className="camera-live">
+
           <span className="dot"></span>
 
-          {cameraOn ? 'LIVE' : 'WAITING'}
+          {cameraOn
+            ? 'LIVE'
+            : 'WAITING'}
+
         </span>
+
       </div>
 
       <div
@@ -402,6 +880,20 @@ function LiveCamera() {
             display: cameraOn
               ? 'block'
               : 'none'
+          }}
+        />
+
+        {/* YOLO + VIRTUAL FENCE OVERLAY */}
+
+        <canvas
+          ref={overlayRef}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 10
           }}
         />
 
@@ -439,6 +931,8 @@ function LiveCamera() {
           </div>
         )}
 
+        {/* CAMERA LABELS */}
+
         <div className="camera-overlay top-left">
           CAM C04
         </div>
@@ -453,7 +947,7 @@ function LiveCamera() {
             : 'CAMERA OFFLINE'}
         </div>
 
-        {/* YOLO detection panel */}
+        {/* YOLO STATUS */}
 
         {cameraOn && (
           <div
@@ -463,19 +957,21 @@ function LiveCamera() {
               left: '12px',
               zIndex: 20,
               background:
-                'rgba(0, 0, 0, 0.78)',
+                'rgba(0,0,0,0.80)',
               color: '#fff',
-              padding: '10px 14px',
+              padding:
+                '10px 14px',
               borderRadius: '8px',
-              minWidth: '150px',
+              minWidth: '170px',
               fontSize: '13px',
-              backdropFilter: 'blur(4px)'
+              backdropFilter:
+                'blur(4px)'
             }}
           >
 
             <div
               style={{
-                fontWeight: '700',
+                fontWeight: 700,
                 marginBottom: '6px'
               }}
             >
@@ -493,6 +989,7 @@ function LiveCamera() {
             </div>
 
             {detections.length === 0 ? (
+
               <div
                 style={{
                   opacity: 0.8
@@ -500,32 +997,75 @@ function LiveCamera() {
               >
                 No objects detected
               </div>
+
             ) : (
+
               detections.map(
                 (detection, index) => (
+
                   <div
                     key={index}
                     style={{
                       marginTop: '4px'
                     }}
                   >
+
                     <strong>
                       {detection.label}
-                    </strong>{' '}
-                    —{' '}
+                    </strong>
+
+                    {' — '}
+
                     {(
                       Number(
                         detection.confidence
                       ) * 100
                     ).toFixed(1)}
+
                     %
+
                   </div>
+
                 )
               )
+
             )}
 
           </div>
         )}
+
+        {/* VIRTUAL FENCE STATUS */}
+
+        {cameraOn && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '50px',
+              right: '12px',
+              zIndex: 20,
+              padding:
+                '9px 13px',
+              borderRadius: '8px',
+              background:
+                fenceViolation
+                  ? 'rgba(239,68,68,0.95)'
+                  : 'rgba(34,197,94,0.95)',
+              color: '#fff',
+              fontWeight: 800,
+              fontSize: '12px',
+              boxShadow:
+                '0 4px 12px rgba(0,0,0,0.25)'
+            }}
+          >
+
+            {fenceViolation
+              ? '🚨 INTRUSION DETECTED'
+              : '🟢 ZONE SECURE'}
+
+          </div>
+        )}
+
+        {/* OBJECT COUNT */}
 
         {cameraOn && (
           <div
@@ -535,9 +1075,10 @@ function LiveCamera() {
               bottom: '42px',
               zIndex: 20,
               background:
-                'rgba(0, 0, 0, 0.75)',
+                'rgba(0,0,0,0.75)',
               color: '#fff',
-              padding: '7px 10px',
+              padding:
+                '7px 10px',
               borderRadius: '6px',
               fontSize: '12px'
             }}
