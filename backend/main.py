@@ -52,9 +52,16 @@ TRACK_TIMEOUT = 30
 # YOLO MODEL
 # ============================================================
 
-print("Loading SentinelAI YOLO model...")
+MODEL_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "vision",
+    "yolov8n.pt"
+)
 
-model = YOLO(MODEL_NAME)
+print("Loading SentinelAI YOLO model from:")
+print(MODEL_PATH)
+
+model = YOLO(MODEL_PATH)
 
 print("YOLO model loaded successfully.")
 
