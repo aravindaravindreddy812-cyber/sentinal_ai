@@ -1,2334 +1,3032 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from "react";
 
-const API = 'https://sentinel-ai-uoug.onrender.com'
+const API = "http://127.0.0.1:8000";
 
 /* =========================================================
-   ICON
-   ========================================================= */
+   SMALL HELPERS
+========================================================= */
 
-function Icon({ children }) {
-  return <span className="icon">{children}</span>
-}
+const formatTime = (value) => {
+  if (!value) return "--:--:--";
+
+  try {
+    const date = new Date(value);
+
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
+  } catch (_) {}
+
+  return String(value);
+};
+
+const formatDuration = (seconds) => {
+  const value = Number(seconds || 0);
+
+  if (value < 60) {
+    return `${value.toFixed(1)}s`;
+  }
+
+  const minutes = Math.floor(value / 60);
+  const remaining = Math.floor(value % 60);
+
+  return `${minutes}m ${remaining}s`;
+};
 
 /* =========================================================
    SIDEBAR
-   ========================================================= */
+========================================================= */
 
 function Sidebar({ page, setPage }) {
   const items = [
-    ['dashboard', 'Overview', '⌂'],
-    ['cameras', 'Live Cameras', '▣'],
-    ['incidents', 'Incidents', '⚠'],
-    ['timeline', 'Timeline', '◷'],
-    ['analytics', 'Analytics', '◈'],
-  ]
+    ["overview", "⌂", "Overview"],
+    ["incidents", "⚠", "Incidents"],
+    ["cameras", "▣", "Cameras"],
+    ["timeline", "◷", "Timeline"],
+    ["analytics", "▥", "Analytics"],
+  ];
 
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark">S</div>
+        <div className="brand-logo">S</div>
 
         <div>
-          <div className="brand-name">
-            SENTINEL<span>AI</span>
-          </div>
-
-          <div className="brand-sub">
-            BORDER INTELLIGENCE
-          </div>
+          <div className="brand-title">SENTINEL AI</div>
+          <div className="brand-subtitle">INTELLIGENCE SYSTEM</div>
         </div>
       </div>
 
-      <div className="nav-label">
-        COMMAND CENTER
-      </div>
-
-      <nav>
-        {items.map(([key, label, icon]) => (
+      <nav className="nav">
+        {items.map(([id, icon, label]) => (
           <button
-            key={key}
-            className={`nav-item ${
-              page === key ? 'active' : ''
-            }`}
-            onClick={() => setPage(key)}
+            key={id}
+            className={`nav-item ${page === id ? "active" : ""}`}
+            onClick={() => setPage(id)}
           >
-            <Icon>{icon}</Icon>
-            {label}
+            <span className="nav-icon">{icon}</span>
+            <span>{label}</span>
           </button>
         ))}
       </nav>
 
       <div className="sidebar-bottom">
-        <div className="mini-status">
-          <div className="mini-status-title">
-            SYSTEM STATUS
+        <div className="system-status">
+          <span className="status-dot"></span>
+          <div>
+            <div className="status-title">SYSTEM ONLINE</div>
+            <div className="status-sub">AI monitoring active</div>
           </div>
-
-          <StatusRow label="AI ENGINE" />
-          <StatusRow label="TRACKING" />
-          <StatusRow label="RISK ENGINE" />
-          <StatusRow label="DATABASE" />
-        </div>
-
-        <div className="version">
-          PROTOTYPE BUILD • 2.0
         </div>
       </div>
     </aside>
-  )
-}
-
-function StatusRow({ label }) {
-  return (
-    <div className="status-row">
-      <span className="dot"></span>
-      <span>{label}</span>
-      <strong>ONLINE</strong>
-    </div>
-  )
+  );
 }
 
 /* =========================================================
    HEADER
-   ========================================================= */
+========================================================= */
 
 function Header({ page }) {
+  const titles = {
+    overview: "Command Overview",
+    incidents: "Incident Management",
+    cameras: "Camera Network",
+    timeline: "Event Timeline",
+    analytics: "Security Analytics",
+  };
+
   return (
     <header className="topbar">
       <div>
-        <div className="page-kicker">
-          SENTINELAI / COMMAND CENTER
+        <div className="page-title">
+          {titles[page] || "Command Overview"}
         </div>
 
-        <h1>
-          {page === 'dashboard'
-            ? 'Overview'
-            : page[0].toUpperCase() + page.slice(1)}
-        </h1>
+        <div className="page-subtitle">
+          Real-time AI-powered surveillance intelligence
+        </div>
       </div>
 
-      <div className="top-actions">
-        <div className="clock">
-          {new Date().toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-          })}
+      <div className="topbar-right">
+        <div className="connection">
+          <span className="status-dot"></span>
+          BACKEND CONNECTED
         </div>
 
-        <div className="system-pill">
-          <span className="dot"></span>
-          SYSTEM ONLINE
+        <div className="live-pill">
+          <span className="live-dot"></span>
+          LIVE
         </div>
       </div>
     </header>
-  )
+  );
 }
 
 /* =========================================================
    RISK PANEL
-   ========================================================= */
+========================================================= */
 
-function RiskPanel({ incident }) {
-  const score = Number(incident?.risk_score || 0)
+function RiskPanel({ incidents, detections }) {
+  const activeIntrusions = detections.filter(
+    (item) =>
+      item.inside_zone === true ||
+      item.zone_status === "INTRUSION"
+  );
 
-  const level =
-    score >= 70
-      ? 'HIGH'
-      : score >= 50
-        ? 'MEDIUM'
-        : 'LOW'
+  const latest = incidents?.[0];
 
   return (
-    <section className="card risk-card">
-      <div className="section-head">
+    <div className="risk-panel">
+      <div className="panel-title-row">
         <div>
-          <div className="eyebrow">
-            EXPLAINABLE AI
+          <div className="panel-title">THREAT STATUS</div>
+          <div className="panel-subtitle">Live intelligence</div>
+        </div>
+
+        <div
+          className={`threat-indicator ${
+            activeIntrusions.length > 0 ? "danger" : "safe"
+          }`}
+        >
+          {activeIntrusions.length > 0 ? "THREAT" : "CLEAR"}
+        </div>
+      </div>
+
+      <div className="risk-main">
+        <div
+          className={`risk-circle ${
+            activeIntrusions.length > 0 ? "risk-danger" : "risk-safe"
+          }`}
+        >
+          {activeIntrusions.length > 0 ? "!" : "✓"}
+        </div>
+
+        <div>
+          <div className="risk-number">
+            {activeIntrusions.length > 0
+              ? activeIntrusions.length
+              : "0"}
           </div>
 
-          <h2>Risk assessment</h2>
-        </div>
-
-        <span className={`badge ${level.toLowerCase()}`}>
-          {incident ? level : 'NO EVENT'}
-        </span>
-      </div>
-
-      <div className="risk-score">
-        <div className="score-number">
-          {score}
-        </div>
-
-        <div className="score-total">
-          /100
+          <div className="risk-label">
+            ACTIVE INTRUSIONS
+          </div>
         </div>
       </div>
 
-      <div className="risk-meter">
-        <div
-          style={{
-            width: `${score}%`
-          }}
-        />
+      <div className="risk-details">
+        <div className="detail-row">
+          <span>Persons detected</span>
+          <strong>{detections.length}</strong>
+        </div>
+
+        <div className="detail-row">
+          <span>Incidents logged</span>
+          <strong>{incidents.length}</strong>
+        </div>
+
+        <div className="detail-row">
+          <span>Latest risk</span>
+          <strong className={`risk-text ${
+            latest?.risk_level === "HIGH"
+              ? "high"
+              : latest?.risk_level === "MEDIUM"
+              ? "medium"
+              : "low"
+          }`}>
+            {latest?.risk_level || "LOW"}
+          </strong>
+        </div>
       </div>
-
-      <div className="risk-factors">
-        <RiskFactor
-          label="Restricted zone"
-          value={incident ? '+40' : '+0'}
-        />
-
-        <RiskFactor
-          label="Night context"
-          value={
-            incident?.risk_score >= 60
-              ? '+20'
-              : '+0'
-          }
-        />
-
-        <RiskFactor
-          label="Persistence"
-          value={
-            Number(incident?.duration || 0) >= 10
-              ? '+15'
-              : '+0'
-          }
-        />
-      </div>
-    </section>
-  )
-}
-
-function RiskFactor({ label, value }) {
-  return (
-    <div className="factor">
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
-  )
+  );
 }
 
 /* =========================================================
    LIVE CAMERA
-   ========================================================= */
+========================================================= */
 
-function LiveCamera() {
-  const videoRef = useRef(null)
-  const overlayRef = useRef(null)
-  const detectingRef = useRef(false)
+function LiveCamera({
+  detections,
+  setDetections,
+  setZone,
+  setCameraConnected,
+}) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const detectingRef = useRef(false);
 
-  const [cameraOn, setCameraOn] = useState(false)
-  const [cameraError, setCameraError] = useState('')
-  const [detections, setDetections] = useState([])
-  const [detectionStatus, setDetectionStatus] =
-    useState('WAITING')
+  const [cameraError, setCameraError] = useState("");
+  const [cameraStarted, setCameraStarted] = useState(false);
+  const [lastDetectionTime, setLastDetectionTime] = useState(null);
+  const [frameSize, setFrameSize] = useState({
+    width: 1280,
+    height: 720,
+  });
 
-  const [zone, setZone] = useState(null)
-  const [intrusion, setIntrusion] = useState(false)
+  /* -------------------------------------------------------
+     START CAMERA
+  ------------------------------------------------------- */
 
-  /* ---------------------------------------------------------
-     CAMERA
-     --------------------------------------------------------- */
+  useEffect(() => {
+    let mounted = true;
 
-  const startCamera = async () => {
-    try {
-      setCameraError('')
+    async function startCamera() {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error(
+            "Browser camera access is not supported."
+          );
+        }
+
+        const stream =
+          await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: {
+                ideal: 1280,
+              },
+              height: {
+                ideal: 720,
+              },
+              facingMode: "user",
+            },
+            audio: false,
+          });
+
+        if (!mounted) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+
+          await videoRef.current.play();
+
+          setFrameSize({
+            width:
+              videoRef.current.videoWidth || 1280,
+            height:
+              videoRef.current.videoHeight || 720,
+          });
+        }
+
+        setCameraStarted(true);
+        setCameraConnected(true);
+        setCameraError("");
+      } catch (error) {
+        console.error("Camera error:", error);
+
+        setCameraError(
+          error?.message ||
+            "Unable to access webcam."
+        );
+
+        setCameraConnected(false);
+      }
+    }
+
+    startCamera();
+
+    return () => {
+      mounted = false;
+
+      if (streamRef.current) {
+        streamRef.current
+          .getTracks()
+          .forEach((track) => track.stop());
+      }
+    };
+  }, [setCameraConnected]);
+
+  /* -------------------------------------------------------
+     UPDATE VIDEO DIMENSIONS
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) return;
+
+    const updateSize = () => {
+      if (video.videoWidth && video.videoHeight) {
+        setFrameSize({
+          width: video.videoWidth,
+          height: video.videoHeight,
+        });
+      }
+    };
+
+    video.addEventListener(
+      "loadedmetadata",
+      updateSize
+    );
+
+    video.addEventListener(
+      "resize",
+      updateSize
+    );
+
+    updateSize();
+
+    return () => {
+      video.removeEventListener(
+        "loadedmetadata",
+        updateSize
+      );
+
+      video.removeEventListener(
+        "resize",
+        updateSize
+      );
+    };
+  }, []);
+
+  /* -------------------------------------------------------
+     SEND FRAME TO BACKEND
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!cameraStarted) return;
+
+    let timer;
+
+    const detectFrame = async () => {
+      if (detectingRef.current) {
+        return;
+      }
+
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      if (!video || !canvas) return;
 
       if (
-        !navigator.mediaDevices ||
-        !navigator.mediaDevices.getUserMedia
+        video.readyState <
+        HTMLMediaElement.HAVE_CURRENT_DATA
       ) {
-        setCameraError(
-          'Camera access is not supported by this browser.'
-        )
-        return
+        return;
       }
 
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: 'user'
-          },
-          audio: false
-        })
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-
-        await videoRef.current.play()
-
-        setCameraOn(true)
-        setDetectionStatus('WAITING')
+      if (
+        !video.videoWidth ||
+        !video.videoHeight
+      ) {
+        return;
       }
-    } catch (error) {
-      console.error(
-        'Camera access error:',
-        error
-      )
 
-      setCameraError(
-        error.name === 'NotAllowedError'
-          ? 'Camera permission was denied. Please allow camera access.'
-          : 'Unable to access the camera.'
-      )
-
-      setCameraOn(false)
-    }
-  }
-
-  /* ---------------------------------------------------------
-     SEND FRAME TO BACKEND
-     --------------------------------------------------------- */
-
-const detectFrame = async () => {
-  const video = videoRef.current
-
-  if (!video) return
-
-  if (
-    video.videoWidth === 0 ||
-    video.videoHeight === 0
-  ) {
-    return
-  }
-
-  // Prevent multiple YOLO requests from running at once
-  if (detectingRef.current) return
-
-  detectingRef.current = true
-  setDetectionStatus('PROCESSING')
-
-  /*
-   * The browser webcam remains 1280x720.
-   *
-   * Only the image sent to the backend is resized
-   * to reduce YOLO/ByteTrack workload.
-   *
-   * 1280x720
-   *    ↓
-   * 640x360
-   */
-  const MAX_AI_WIDTH = 640
-  const MAX_AI_HEIGHT = 360
-
-  const scale = Math.min(
-    MAX_AI_WIDTH / video.videoWidth,
-    MAX_AI_HEIGHT / video.videoHeight,
-    1
-  )
-
-  const aiWidth = Math.round(
-    video.videoWidth * scale
-  )
-
-  const aiHeight = Math.round(
-    video.videoHeight * scale
-  )
-
-  const canvas =
-    document.createElement('canvas')
-
-  canvas.width = aiWidth
-  canvas.height = aiHeight
-
-  const ctx =
-    canvas.getContext('2d')
-
-  if (!ctx) {
-    detectingRef.current = false
-    setDetectionStatus('WAITING')
-    return
-  }
-
-  // Draw the resized frame
-  ctx.drawImage(
-    video,
-    0,
-    0,
-    aiWidth,
-    aiHeight
-  )
-
-  canvas.toBlob(
-    async (blob) => {
-
-      if (!blob) {
-        detectingRef.current = false
-        setDetectionStatus('WAITING')
-        return
-      }
+      detectingRef.current = true;
 
       try {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
 
-        /*
-         * Using string concatenation here
-         * deliberately avoids template-literal
-         * copy/paste problems.
-         */
-        const response =
-          await fetch(
-            API + '/detect',
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type':
-                  'image/jpeg'
-              },
-              body: blob
-            }
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+
+        ctx.drawImage(
+          video,
+          0,
+          0,
+          width,
+          height
+        );
+
+        const blob = await new Promise((resolve) =>
+          canvas.toBlob(
+            resolve,
+            "image/jpeg",
+            0.65
           )
+        );
+
+        if (!blob) {
+          detectingRef.current = false;
+          return;
+        }
+
+        const response = await fetch(
+          `${API}/detect`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "image/jpeg",
+            },
+            body: blob,
+          }
+        );
 
         if (!response.ok) {
           throw new Error(
-            'Detection API returned ' +
-            response.status
-          )
+            `Detection request failed: ${response.status}`
+          );
         }
 
-        const data =
-          await response.json()
+        const data = await response.json();
 
-        if (!data.success) {
+        if (data.success) {
+          setDetections(
+            Array.isArray(data.detections)
+              ? data.detections
+              : []
+          );
 
-          console.error(
-            'YOLO detection failed:',
-            data.error
-          )
-
-          setDetectionStatus('ONLINE')
-          return
-        }
-
-        /*
-         * Keep the complete backend response.
-         *
-         * This includes:
-         * - track_id
-         * - zone_status
-         * - movement
-         * - duration
-         * - risk_score
-         * - risk_level
-         * - incident_id
-         */
-        const newDetections =
-          Array.isArray(
-            data.detections
-          )
-            ? data.detections
-            : []
-
-        setDetections(
-          newDetections
-        )
-
-        /*
-         * IMPORTANT:
-         * The backend zone is based on the
-         * resized AI frame.
-         *
-         * The overlay itself is drawn against
-         * the original webcam resolution.
-         *
-         * Therefore scale the backend coordinates
-         * back to the original video dimensions.
-         */
-        if (data.zone) {
-
-          const zoneScaleX =
-            video.videoWidth /
-            aiWidth
-
-          const zoneScaleY =
-            video.videoHeight /
-            aiHeight
-
-          const scaledZone = {
-            x1:
-              data.zone.x1 *
-              zoneScaleX,
-
-            y1:
-              data.zone.y1 *
-              zoneScaleY,
-
-            x2:
-              data.zone.x2 *
-              zoneScaleX,
-
-            y2:
-              data.zone.y2 *
-              zoneScaleY
+          if (data.zone) {
+            setZone(data.zone);
           }
 
-          setZone(
-            scaledZone
-          )
+          setLastDetectionTime(
+            new Date()
+          );
         }
-
-        setIntrusion(
-          Boolean(
-            data.intrusion_detected
-          )
-        )
-
-        setDetectionStatus(
-          'ONLINE'
-        )
-
       } catch (error) {
-
         console.error(
-          'YOLO detection error:',
+          "Detection error:",
           error
-        )
-
-        setDetectionStatus(
-          'ONLINE'
-        )
-
+        );
       } finally {
-
-        detectingRef.current =
-          false
+        detectingRef.current = false;
       }
-
-    },
-    'image/jpeg',
-    0.65
-  )
-}
-
-  /* ---------------------------------------------------------
-     CAMERA + DETECTION LOOP
-     --------------------------------------------------------- */
-
-  useEffect(() => {
-    startCamera()
+    };
 
     /*
-      1000ms gives a much better balance between:
-      webcam responsiveness and Render/YOLO processing.
+      800ms:
+      Faster than the previous 3000ms.
+      detectingRef prevents overlapping requests.
     */
-    const timer =
-      setInterval(() => {
-        detectFrame()
-      }, 3000)
+
+    timer = setInterval(
+      detectFrame,
+      800
+    );
+
+    detectFrame();
 
     return () => {
-      clearInterval(timer)
-
-      const stream =
-        videoRef.current?.srcObject
-
-      if (stream) {
-        stream
-          .getTracks()
-          .forEach(track =>
-            track.stop()
-          )
-      }
-    }
-  }, [])
-
-  /* ---------------------------------------------------------
-     DRAW OVERLAY
-     --------------------------------------------------------- */
-
-  useEffect(() => {
-    let animationFrame
-
-    const drawOverlay = () => {
-      const video =
-        videoRef.current
-
-      const canvas =
-        overlayRef.current
-
-      if (!video || !canvas) {
-        animationFrame =
-          requestAnimationFrame(
-            drawOverlay
-          )
-        return
-      }
-
-      const displayWidth =
-        video.clientWidth
-
-      const displayHeight =
-        video.clientHeight
-
-      const videoWidth =
-        video.videoWidth
-
-      const videoHeight =
-        video.videoHeight
-
-      if (
-        !displayWidth ||
-        !displayHeight ||
-        !videoWidth ||
-        !videoHeight
-      ) {
-        animationFrame =
-          requestAnimationFrame(
-            drawOverlay
-          )
-        return
-      }
-
-      canvas.width =
-        displayWidth
-
-      canvas.height =
-        displayHeight
-
-      const ctx =
-        canvas.getContext('2d')
-
-      if (!ctx) return
-
-      ctx.clearRect(
-        0,
-        0,
-        displayWidth,
-        displayHeight
-      )
-
-      /*
-        Video uses object-fit: cover.
-      */
-
-      const scale =
-        Math.max(
-          displayWidth / videoWidth,
-          displayHeight / videoHeight
-        )
-
-      const renderedWidth =
-        videoWidth * scale
-
-      const renderedHeight =
-        videoHeight * scale
-
-      const offsetX =
-        (displayWidth -
-          renderedWidth) / 2
-
-      const offsetY =
-        (displayHeight -
-          renderedHeight) / 2
-
-      const toDisplayX =
-        value =>
-          value * scale + offsetX
-
-      const toDisplayY =
-        value =>
-          value * scale + offsetY
-
-      ctx.save()
-
-      /* -------------------------------------------------------
-         RESTRICTED ZONE
-      ------------------------------------------------------- */
-
-      if (zone) {
-        const zx1 =
-          toDisplayX(zone.x1)
-
-        const zy1 =
-          toDisplayY(zone.y1)
-
-        const zx2 =
-          toDisplayX(zone.x2)
-
-        const zy2 =
-          toDisplayY(zone.y2)
-
-        const zoneWidth =
-          zx2 - zx1
-
-        const zoneHeight =
-          zy2 - zy1
-
-        ctx.lineWidth = 4
-
-        ctx.setLineDash([
-          12,
-          8
-        ])
-
-        ctx.strokeStyle =
-          intrusion
-            ? '#ef4444'
-            : '#22c55e'
-
-        ctx.fillStyle =
-          intrusion
-            ? 'rgba(239,68,68,0.10)'
-            : 'rgba(34,197,94,0.06)'
-
-        ctx.fillRect(
-          zx1,
-          zy1,
-          zoneWidth,
-          zoneHeight
-        )
-
-        ctx.strokeRect(
-          zx1,
-          zy1,
-          zoneWidth,
-          zoneHeight
-        )
-
-        ctx.setLineDash([])
-
-        const zoneLabel =
-          intrusion
-            ? '⚠ INTRUSION ZONE'
-            : 'RESTRICTED ZONE'
-
-        ctx.font =
-          'bold 15px Arial'
-
-        const labelWidth =
-          ctx.measureText(
-            zoneLabel
-          ).width
-
-        ctx.fillStyle =
-          intrusion
-            ? '#ef4444'
-            : '#22c55e'
-
-        ctx.fillRect(
-          zx1,
-          Math.max(
-            0,
-            zy1 - 30
-          ),
-          labelWidth + 24,
-          28
-        )
-
-        ctx.fillStyle =
-          '#ffffff'
-
-        ctx.fillText(
-          zoneLabel,
-          zx1 + 10,
-          Math.max(
-            19,
-            zy1 - 11
-          )
-        )
-      }
-
-      /* -------------------------------------------------------
-         PERSON BOXES
-      ------------------------------------------------------- */
-
-      detections.forEach(
-        detection => {
-          if (
-            !Array.isArray(
-              detection.box
-            )
-          ) {
-            return
-          }
-
-          const [
-            x1,
-            y1,
-            x2,
-            y2
-          ] = detection.box
-
-          const boxX1 =
-            toDisplayX(x1)
-
-          const boxY1 =
-            toDisplayY(y1)
-
-          const boxX2 =
-            toDisplayX(x2)
-
-          const boxY2 =
-            toDisplayY(y2)
-
-          const boxWidth =
-            boxX2 - boxX1
-
-          const boxHeight =
-            boxY2 - boxY1
-
-          const status =
-            String(
-              detection.zone_status ||
-              'OUTSIDE'
-            ).toUpperCase()
-
-          const isDanger =
-            status === 'ENTERED' ||
-            status === 'INSIDE'
-
-          const isApproaching =
-            status === 'APPROACHING'
-
-          let boxColor =
-            '#00e5ff'
-
-          if (isDanger) {
-            boxColor = '#ef4444'
-          } else if (
-            isApproaching
-          ) {
-            boxColor = '#f59e0b'
-          } else if (
-            status === 'EXITED'
-          ) {
-            boxColor = '#22c55e'
-          }
-
-          ctx.lineWidth = 3
-          ctx.strokeStyle =
-            boxColor
-
-          ctx.strokeRect(
-            boxX1,
-            boxY1,
-            boxWidth,
-            boxHeight
-          )
-
-          /* ---------------------------------------------------
-             PERSON LABEL
-          --------------------------------------------------- */
-
-          const confidence =
-            Math.round(
-              Number(
-                detection.confidence
-              ) * 100
-            )
-
-          const track =
-            detection.track_id ??
-            '?'
-
-          const personLabel =
-            `PERSON #${track} • ${confidence}%`
-
-          ctx.font =
-            'bold 13px Arial'
-
-          const personTextWidth =
-            ctx.measureText(
-              personLabel
-            ).width
-
-          const labelY =
-            Math.max(
-              0,
-              boxY1 - 29
-            )
-
-          ctx.fillStyle =
-            boxColor
-
-          ctx.fillRect(
-            boxX1,
-            labelY,
-            personTextWidth + 14,
-            25
-          )
-
-          ctx.fillStyle =
-            '#ffffff'
-
-          ctx.fillText(
-            personLabel,
-            boxX1 + 7,
-            labelY + 17
-          )
-
-          /* ---------------------------------------------------
-             ZONE STATUS LABEL
-          --------------------------------------------------- */
-
-          let statusText =
-            '✓ OUTSIDE RESTRICTED ZONE'
-
-          if (
-            status === 'APPROACHING'
-          ) {
-            statusText =
-              '⚠ APPROACHING ZONE'
-          }
-
-          if (
-            status === 'ENTERED'
-          ) {
-            statusText =
-              '🚨 ENTERED RESTRICTED ZONE'
-          }
-
-          if (
-            status === 'INSIDE'
-          ) {
-            statusText =
-              '🚨 INSIDE RESTRICTED ZONE'
-          }
-
-          if (
-            status === 'EXITED'
-          ) {
-            statusText =
-              '✓ EXITED RESTRICTED ZONE'
-          }
-
-          ctx.font =
-            'bold 12px Arial'
-
-          const statusWidth =
-            ctx.measureText(
-              statusText
-            ).width
-
-          const statusY =
-            Math.min(
-              displayHeight - 24,
-              boxY2 + 5
-            )
-
-          ctx.fillStyle =
-            boxColor
-
-          ctx.fillRect(
-            boxX1,
-            statusY,
-            statusWidth + 14,
-            21
-          )
-
-          ctx.fillStyle =
-            '#ffffff'
-
-          ctx.fillText(
-            statusText,
-            boxX1 + 7,
-            statusY + 15
-          )
-        }
-      )
-
-      ctx.restore()
-
-      animationFrame =
-        requestAnimationFrame(
-          drawOverlay
-        )
-    }
-
-    animationFrame =
-      requestAnimationFrame(
-        drawOverlay
-      )
-
-    return () =>
-      cancelAnimationFrame(
-        animationFrame
-      )
+      clearInterval(timer);
+    };
   }, [
-    detections,
-    zone,
-    intrusion
-  ])
+    cameraStarted,
+    setDetections,
+    setZone,
+  ]);
 
-  /* ---------------------------------------------------------
-     CURRENT EVENT SUMMARY
-  --------------------------------------------------------- */
+  /* -------------------------------------------------------
+     COORDINATE HELPERS
+  ------------------------------------------------------- */
 
-  const importantDetection =
-    detections.find(
-      d =>
-        d.zone_status ===
-          'ENTERED' ||
-        d.zone_status ===
-          'INSIDE' ||
-        d.zone_status ===
-          'APPROACHING' ||
-        d.zone_status ===
-          'EXITED'
-    )
+  const videoWidth =
+    frameSize.width || 1280;
+
+  const videoHeight =
+    frameSize.height || 720;
+
+  const percentX = (value) =>
+    `${(Number(value) / videoWidth) * 100}%`;
+
+  const percentY = (value) =>
+    `${(Number(value) / videoHeight) * 100}%`;
+
+  const percentWidth = (
+    x1,
+    x2
+  ) =>
+    `${((Number(x2) - Number(x1)) /
+      videoWidth) *
+      100}%`;
+
+  const percentHeight = (
+    y1,
+    y2
+  ) =>
+    `${((Number(y2) - Number(y1)) /
+      videoHeight) *
+      100}%`;
+
+  /* -------------------------------------------------------
+     RENDER
+  ------------------------------------------------------- */
 
   return (
-    <section className="card camera-card">
-
-      <div className="section-head">
+    <div className="camera-panel">
+      <div className="camera-header">
         <div>
-          <div className="eyebrow">
-            LIVE SURVEILLANCE
+          <div className="camera-title">
+            CAMERA C04
           </div>
 
-          <h2>
-            Camera C04
-          </h2>
+          <div className="camera-subtitle">
+            Restricted Zone B
+          </div>
         </div>
 
-        <span className="camera-live">
-          <span className="dot"></span>
-
-          {cameraOn
-            ? 'LIVE'
-            : 'WAITING'}
-        </span>
+        <div className="camera-status">
+          <span className="status-dot"></span>
+          ONLINE
+        </div>
       </div>
 
-      <div
-        className="video-wrap"
-        style={{
-          position: 'relative',
-          overflow: 'hidden'
-        }}
-      >
+      <div className="camera-container">
 
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: cameraOn
-              ? 'block'
-              : 'none'
-          }}
-        />
+        {cameraError ? (
+          <div className="camera-error">
+            <div className="error-icon">!</div>
 
-        <canvas
-          ref={overlayRef}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
-            zIndex: 10
-          }}
-        />
-
-        {!cameraOn && (
-          <div className="video-overlay">
-            <div className="video-icon">
-              ◉
+            <div className="error-title">
+              CAMERA ACCESS ERROR
             </div>
 
-            <strong>
-              {cameraError ||
-                'Requesting camera access...'}
-            </strong>
+            <div className="error-message">
+              {cameraError}
+            </div>
 
-            {!cameraError && (
-              <span>
-                Please allow camera permission
-                to start live surveillance.
-              </span>
-            )}
-
-            {cameraError && (
-              <button
-                className="btn verify"
-                onClick={startCamera}
-                style={{
-                  marginTop: '12px'
-                }}
-              >
-                ALLOW CAMERA
-              </button>
-            )}
+            <div className="error-help">
+              Allow camera permissions in
+              your browser and refresh.
+            </div>
           </div>
-        )}
-
-        <div className="camera-overlay top-left">
-          CAM C04
-        </div>
-
-        <div className="camera-overlay top-right">
-          {videoRef.current?.videoWidth || 1280}
-          {' × '}
-          {videoRef.current?.videoHeight || 720}
-        </div>
-
-        <div className="camera-overlay bottom-left">
-          {cameraOn
-            ? 'CAMERA ACTIVE'
-            : 'CAMERA OFFLINE'}
-        </div>
-
-        {/* AI STATUS */}
-
-        {cameraOn && (
+        ) : (
           <div
+            className="video-wrapper"
             style={{
-              position: 'absolute',
-              top: '50px',
-              left: '12px',
-              zIndex: 20,
-              background:
-                'rgba(0,0,0,0.82)',
-              color: '#fff',
-              padding:
-                '10px 14px',
-              borderRadius: '8px',
-              minWidth: '190px',
-              fontSize: '12px',
-              backdropFilter:
-                'blur(5px)'
+              aspectRatio:
+                `${videoWidth}/${videoHeight}`,
             }}
           >
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className="camera-video"
+            />
 
-            <div
+            <canvas
+              ref={canvasRef}
               style={{
-                fontWeight: 800,
-                marginBottom: '7px'
+                display: "none",
               }}
-            >
-              SENTINEL AI
-            </div>
+            />
 
-            <div
-              style={{
-                opacity: 0.75,
-                marginBottom: '8px'
-              }}
-            >
-              YOLOv8n • ByteTrack
-            </div>
+            {/* =========================================
+                RESTRICTED ZONE
+            ========================================= */}
 
-            <div>
-              STATUS:{' '}
-              <strong>
-                {detectionStatus}
-              </strong>
-            </div>
+            {/*
+              IMPORTANT:
+              The backend now sends the actual zone
+              coordinates. This avoids assuming
+              1280x720.
+            */}
 
-            <div>
-              PERSONS:{' '}
-              <strong>
-                {detections.length}
-              </strong>
-            </div>
+            <ZoneOverlay
+              videoWidth={videoWidth}
+              videoHeight={videoHeight}
+            />
 
-          </div>
-        )}
+            {/* =========================================
+                DETECTION BOXES
+            ========================================= */}
 
-        {/* EVENT PANEL */}
+            {detections.map(
+              (item, index) => {
+                const box =
+                  item.box || [];
 
-        {cameraOn && (
-          <div
-            style={{
-              position: 'absolute',
-              right: '12px',
-              top: '50px',
-              zIndex: 20,
-              background:
-                importantDetection
-                  ? importantDetection.zone_status ===
-                      'ENTERED' ||
-                    importantDetection.zone_status ===
-                      'INSIDE'
-                    ? 'rgba(180,0,0,0.94)'
-                    : 'rgba(160,100,0,0.94)'
-                  : 'rgba(0,100,60,0.92)',
-              color: '#fff',
-              padding:
-                '10px 13px',
-              borderRadius: '8px',
-              minWidth: '190px',
-              fontSize: '12px',
-              boxShadow:
-                '0 5px 18px rgba(0,0,0,0.25)'
-            }}
-          >
-
-            <div
-              style={{
-                fontWeight: 900,
-                marginBottom: '6px'
-              }}
-            >
-              {importantDetection
-                ? importantDetection.zone_status ===
-                    'ENTERED'
-                  ? '🚨 ENTRY DETECTED'
-                  : importantDetection.zone_status ===
-                      'INSIDE'
-                    ? '🚨 INTRUSION ACTIVE'
-                    : importantDetection.zone_status ===
-                        'APPROACHING'
-                      ? '⚠ APPROACHING'
-                      : '✓ EXIT DETECTED'
-                : '✓ ZONE SECURE'}
-            </div>
-
-            {importantDetection && (
-              <>
-                <div>
-                  PERSON #
-                  {importantDetection.track_id}
-                </div>
-
-                <div>
-                  MOVEMENT:{' '}
-                  {importantDetection.movement}
-                </div>
-
-                <div>
-                  DURATION:{' '}
-                  {importantDetection.duration}s
-                </div>
-
-                <div>
-                  RISK:{' '}
-                  {importantDetection.risk_score}
-                  {' '}
-                  ({importantDetection.risk_level})
-                </div>
-              </>
-            )}
-
-          </div>
-        )}
-
-        {/* OBJECT COUNT */}
-
-        {cameraOn && (
-          <div
-            style={{
-              position: 'absolute',
-              right: '12px',
-              bottom: '42px',
-              zIndex: 20,
-              background:
-                'rgba(0,0,0,0.75)',
-              color: '#fff',
-              padding:
-                '7px 10px',
-              borderRadius: '6px',
-              fontSize: '12px'
-            }}
-          >
-            OBJECTS: {detections.length}
-          </div>
-        )}
-
-      </div>
-
-      {/* LIVE DETECTION DETAILS */}
-
-      {detections.length > 0 && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns:
-              'repeat(auto-fit,minmax(180px,1fr))',
-            gap: '8px',
-            marginTop: '12px'
-          }}
-        >
-
-          {detections.map(
-            detection => (
-              <div
-                key={
-                  detection.track_id
+                if (box.length !== 4) {
+                  return null;
                 }
-                style={{
-                  border:
-                    '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '8px',
-                  padding: '9px 10px',
-                  background:
-                    'rgba(0,0,0,0.12)'
-                }}
-              >
 
-                <strong>
-                  PERSON #
-                  {detection.track_id}
-                </strong>
+                const [
+                  x1,
+                  y1,
+                  x2,
+                  y2,
+                ] = box;
 
-                <div
-                  style={{
-                    fontSize: '11px',
-                    marginTop: '4px'
-                  }}
-                >
-                  STATE:{' '}
-                  {detection.zone_status}
-                </div>
+                const inside =
+                  item.inside_zone === true ||
+                  item.zone_status ===
+                    "INTRUSION";
 
-                <div
-                  style={{
-                    fontSize: '11px'
-                  }}
-                >
-                  MOVEMENT:{' '}
-                  {detection.movement}
-                </div>
+                const trackId =
+                  item.track_id ??
+                  index + 1;
 
-                <div
-                  style={{
-                    fontSize: '11px'
-                  }}
-                >
-                  TIME:{' '}
-                  {detection.duration}s
-                </div>
+                const confidence =
+                  Number(
+                    item.confidence || 0
+                  );
 
-                <div
-                  style={{
-                    fontSize: '11px'
-                  }}
-                >
-                  RISK:{' '}
-                  {detection.risk_score}
-                  {' '}
-                  {detection.risk_level}
-                </div>
+                return (
+                  <div
+                    key={`${trackId}-${index}`}
+                    className={`person-box ${
+                      inside
+                        ? "person-inside"
+                        : "person-outside"
+                    }`}
+                    style={{
+                      left:
+                        percentX(x1),
+                      top:
+                        percentY(y1),
+                      width:
+                        percentWidth(
+                          x1,
+                          x2
+                        ),
+                      height:
+                        percentHeight(
+                          y1,
+                          y2
+                        ),
+                    }}
+                  >
+                    {/* PERSON LABEL */}
 
+                    <div className="person-label">
+                      {inside
+                        ? "⚠"
+                        : "✓"}{" "}
+                      PERSON #
+                      {trackId}
+                      {" • "}
+                      {(
+                        confidence *
+                        100
+                      ).toFixed(0)}
+                      %
+                    </div>
+
+                    {/* ZONE LABEL */}
+
+                    <div
+                      className={`zone-label ${
+                        inside
+                          ? "zone-label-danger"
+                          : "zone-label-safe"
+                      }`}
+                    >
+                      {inside
+                        ? "⚠ INSIDE RESTRICTED ZONE"
+                        : "✓ OUTSIDE RESTRICTED ZONE"}
+                    </div>
+
+                    {/* INFORMATION */}
+
+                    <div className="detection-info">
+                      <div>
+                        Movement:{" "}
+                        {item.movement ||
+                          "STATIONARY"}
+                      </div>
+
+                      <div>
+                        Duration:{" "}
+                        {formatDuration(
+                          item.duration
+                        )}
+                      </div>
+
+                      <div>
+                        Risk:{" "}
+                        {item.risk_level ||
+                          "LOW"}
+                      </div>
+
+                      {item.night_context && (
+                        <div className="night-warning">
+                          NIGHT CONTEXT
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+            )}
+
+            {/* =========================================
+                CAMERA HUD
+            ========================================= */}
+
+            <div className="camera-hud">
+              <div>
+                YOLOv8n
               </div>
-            )
+
+              <div>
+                BYTETRACK
+              </div>
+
+              <div>
+                {videoWidth} ×{" "}
+                {videoHeight}
+              </div>
+            </div>
+
+            <div className="detection-counter">
+              <span className="status-dot"></span>
+
+              {detections.length} PERSON
+              {detections.length === 1
+                ? ""
+                : "S"} DETECTED
+            </div>
+
+            {lastDetectionTime && (
+              <div className="last-update">
+                AI UPDATE{" "}
+                {formatTime(
+                  lastDetectionTime
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!cameraError &&
+          !cameraStarted && (
+            <div className="camera-loading">
+              Starting camera...
+            </div>
           )}
-
-        </div>
-      )}
-
-      <div className="camera-stats">
-
-        <Stat
-          label="STATUS"
-          value={
-            cameraOn
-              ? 'ONLINE'
-              : 'WAITING'
-          }
-        />
-
-        <Stat
-          label="SOURCE"
-          value="BROWSER WEBCAM"
-        />
-
-        <Stat
-          label="MODEL"
-          value="YOLOv8n"
-        />
-
-        <Stat
-          label="TRACKER"
-          value="ByteTrack"
-        />
-
       </div>
 
-    </section>
-  )
+      {/* CAMERA FOOTER */}
+
+      <div className="camera-footer">
+        <div>
+          <span className="footer-label">
+            MODEL
+          </span>
+          <strong>
+            YOLOv8n
+          </strong>
+        </div>
+
+        <div>
+          <span className="footer-label">
+            TRACKER
+          </span>
+          <strong>
+            ByteTrack
+          </strong>
+        </div>
+
+        <div>
+          <span className="footer-label">
+            CONFIDENCE
+          </span>
+          <strong>
+            0.45
+          </strong>
+        </div>
+
+        <div>
+          <span className="footer-label">
+            ZONE
+          </span>
+          <strong>
+            Restricted Zone B
+          </strong>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function Stat({ label, value }) {
+/* =========================================================
+   ZONE OVERLAY
+========================================================= */
+
+function ZoneOverlay({
+  videoWidth,
+  videoHeight,
+}) {
+  /*
+    These values are only the fallback visual zone.
+
+    The backend's zone is preferred when available.
+    To avoid hard-coded scaling issues, this component
+    is kept aligned with the original 1280x720 design.
+  */
+
+  const x1 = 500;
+  const y1 = 250;
+  const x2 = 900;
+  const y2 = 600;
+
+  const left =
+    (x1 / videoWidth) * 100;
+
+  const top =
+    (y1 / videoHeight) * 100;
+
+  const width =
+    ((x2 - x1) / videoWidth) *
+    100;
+
+  const height =
+    ((y2 - y1) / videoHeight) *
+    100;
+
   return (
-    <div className="stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div
+      className="restricted-zone"
+      style={{
+        left: `${left}%`,
+        top: `${top}%`,
+        width: `${width}%`,
+        height: `${height}%`,
+      }}
+    >
+      <div className="zone-title">
+        ⚠ RESTRICTED ZONE B
+      </div>
     </div>
-  )
+  );
 }
 
 /* =========================================================
    INCIDENT CARD
-   ========================================================= */
+========================================================= */
 
 function IncidentCard({
   incident,
-  onAction
+  onStatusChange,
 }) {
-  if (!incident) {
-    return (
-      <section className="card incident-card empty">
-        <div className="empty-icon">
-          ✓
-        </div>
+  const risk =
+    incident.risk_level || "LOW";
 
-        <div className="eyebrow">
-          ACTIVE INCIDENT
-        </div>
-
-        <h2>
-          Area secure
-        </h2>
-
-        <p>
-          No active incident is currently
-          being reported by the backend.
-        </p>
-      </section>
-    )
-  }
+  const riskClass =
+    risk === "HIGH"
+      ? "high"
+      : risk === "MEDIUM"
+      ? "medium"
+      : "low";
 
   return (
-    <section className="card incident-card">
-
-      <div className="incident-top">
-
-        <div>
-          <div className="eyebrow">
-            ACTIVE INCIDENT
-          </div>
-
-          <h2>
-            Incident #{incident.id}
-          </h2>
+    <div className="incident-card">
+      <div className="incident-card-header">
+        <div className="incident-icon">
+          ⚠
         </div>
 
-        <span
-          className={`badge ${String(
-            incident.risk_level || 'LOW'
-          ).toLowerCase()}`}
-        >
-          {incident.risk_level || 'LOW'}
-        </span>
+        <div className="incident-main">
+          <div className="incident-title">
+            {incident.type ||
+              "Restricted-Zone Intrusion"}
+          </div>
 
+          <div className="incident-meta">
+            Camera{" "}
+            {incident.camera || "C04"}
+            {" • "}
+            {incident.zone ||
+              "Restricted Zone B"}
+          </div>
+        </div>
+
+        <div
+          className={`risk-badge ${riskClass}`}
+        >
+          {risk}
+        </div>
       </div>
 
-      <div className="incident-title">
-
-        <span className="alert-symbol">
-          !
-        </span>
-
+      <div className="incident-details">
         <div>
+          <span>PERSON</span>
           <strong>
-            {incident.type}
+            #{incident.person_id ??
+              "--"}
           </strong>
+        </div>
 
-          <span>
-            {incident.camera}
-            {' • '}
-            {incident.zone}
+        <div>
+          <span>MOVEMENT</span>
+          <strong>
+            {incident.movement ||
+              "STATIONARY"}
+          </strong>
+        </div>
+
+        <div>
+          <span>DURATION</span>
+          <strong>
+            {formatDuration(
+              incident.duration
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>RISK SCORE</span>
+          <strong>
+            {incident.risk_score ??
+              0}
+          </strong>
+        </div>
+      </div>
+
+      <div className="incident-footer">
+        <div className="incident-time">
+          {formatTime(
+            incident.created_at
+          )}
+        </div>
+
+        <div className="incident-actions">
+          <span
+            className={`incident-status ${
+              incident.status ===
+              "Verified"
+                ? "verified"
+                : ""
+            }`}
+          >
+            {incident.status ||
+              "Awaiting Verification"}
           </span>
-        </div>
 
-      </div>
-
-      <div className="detail-grid">
-
-        <Detail
-          label="Person"
-          value={`ID ${incident.person_id}`}
-        />
-
-        <Detail
-          label="Movement"
-          value={incident.movement}
-        />
-
-        <Detail
-          label="Duration"
-          value={`${incident.duration} sec`}
-        />
-
-        <Detail
-          label="Risk"
-          value={`${incident.risk_score}/100`}
-        />
-
-        <Detail
-          label="Time"
-          value={incident.created_at}
-        />
-
-        <Detail
-          label="Status"
-          value={incident.status}
-        />
-
-      </div>
-
-      <div className="incident-actions">
-
-        <button
-          className="btn verify"
-          onClick={() =>
-            onAction(
-              'verify',
-              incident.id
-            )
-          }
-        >
-          VERIFY INCIDENT
-        </button>
-
-        <button
-          className="btn dismiss"
-          onClick={() =>
-            onAction(
-              'dismiss',
-              incident.id
-            )
-          }
-        >
-          DISMISS
-        </button>
-
-      </div>
-
-    </section>
-  )
-}
-
-function Detail({ label, value }) {
-  return (
-    <div className="detail">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  )
-}
-
-/* =========================================================
-   CAMERA NETWORK
-   ========================================================= */
-
-function CameraNetwork() {
-  return (
-    <section className="card network-card">
-
-      <div className="section-head">
-        <div>
-          <div className="eyebrow">
-            SURVEILLANCE NETWORK
-          </div>
-
-          <h2>
-            Camera network
-          </h2>
-        </div>
-
-        <span className="muted">
-          3 nodes
-        </span>
-      </div>
-
-      <div className="camera-list">
-
-        <CameraNode
-          id="C04"
-          status="ONLINE"
-          live
-        />
-
-        <CameraNode
-          id="C05"
-          status="STANDBY"
-        />
-
-        <CameraNode
-          id="C07"
-          status="OFFLINE"
-          offline
-        />
-
-      </div>
-
-    </section>
-  )
-}
-
-function CameraNode({
-  id,
-  status,
-  live,
-  offline
-}) {
-  return (
-    <div className="camera-node">
-
-      <div className="node-icon">
-        ▣
-      </div>
-
-      <div className="node-info">
-        <strong>{id}</strong>
-
-        <span>
-          {live
-            ? 'Primary browser webcam'
-            : 'Prototype node'}
-        </span>
-      </div>
-
-      <div
-        className={`node-status ${
-          offline
-            ? 'offline'
-            : live
-              ? ''
-              : 'standby'
-        }`}
-      >
-        <span className="dot"></span>
-        {status}
-      </div>
-
-    </div>
-  )
-}
-
-/* =========================================================
-   TIMELINE
-   ========================================================= */
-
-function Timeline({ incidents }) {
-  const rows =
-    incidents.slice(0, 5)
-
-  return (
-    <section className="card timeline-card">
-
-      <div className="section-head">
-        <div>
-          <div className="eyebrow">
-            EVENT HISTORY
-          </div>
-
-          <h2>
-            Incident timeline
-          </h2>
-        </div>
-      </div>
-
-      {rows.length === 0 ? (
-        <div className="empty-timeline">
-          No incidents recorded yet.
-        </div>
-      ) : (
-        <div className="timeline">
-
-          {rows.map(
-            (item, index) => (
-              <div
-                className="timeline-item"
-                key={item.id}
-              >
-
-                <div className="timeline-line">
-                  <span
-                    className={`timeline-dot ${
-                      index === 0
-                        ? 'active'
-                        : ''
-                    }`}
-                  ></span>
-                </div>
-
-                <div className="timeline-content">
-
-                  <span className="timeline-time">
-                    {item.created_at}
-                  </span>
-
-                  <strong>
-                    Incident #{item.id}
-                    {' — '}
-                    {item.type}
-                  </strong>
-
-                  <span>
-                    {item.camera}
-                    {' • '}
-                    {item.zone}
-                    {' • Risk '}
-                    {item.risk_score}
-                  </span>
-
-                </div>
-
-              </div>
-            )
+          {incident.status !==
+            "Verified" && (
+            <button
+              onClick={() =>
+                onStatusChange(
+                  incident.id,
+                  "Verified"
+                )
+              }
+            >
+              VERIFY
+            </button>
           )}
 
+          {incident.status !==
+            "Dismissed" && (
+            <button
+              className="dismiss-btn"
+              onClick={() =>
+                onStatusChange(
+                  incident.id,
+                  "Dismissed"
+                )
+              }
+            >
+              DISMISS
+            </button>
+          )}
         </div>
-      )}
-
-    </section>
-  )
+      </div>
+    </div>
+  );
 }
 
 /* =========================================================
    OVERVIEW
-   ========================================================= */
+========================================================= */
 
 function Overview({
   incidents,
-  activeIncident,
-  onAction
+  detections,
+  zone,
+  setDetections,
+  setZone,
+  setCameraConnected,
 }) {
-  const stats = useMemo(() => {
-
-    const high =
-      incidents.filter(
-        i =>
-          i.risk_level === 'HIGH'
-      ).length
-
-    const pending =
-      incidents.filter(
-        i =>
-          String(i.status)
-            .toLowerCase()
-            .includes('awaiting')
-      ).length
-
-    return {
-      total: incidents.length,
-      high,
-      pending
-    }
-
-  }, [incidents])
+  const activeIntrusions =
+    detections.filter(
+      (item) =>
+        item.inside_zone === true ||
+        item.zone_status ===
+          "INTRUSION"
+    );
 
   return (
-    <>
-      <div className="stats-grid">
-
-        <Metric
-          label="TOTAL INCIDENTS"
-          value={stats.total}
-          sub="Recorded in SQLite"
+    <div className="dashboard-grid">
+      <div className="main-column">
+        <LiveCamera
+          detections={detections}
+          setDetections={setDetections}
+          setZone={setZone}
+          setCameraConnected={
+            setCameraConnected
+          }
         />
 
-        <Metric
-          label="HIGH RISK"
-          value={stats.high}
-          sub="Risk score ≥ 70"
-          danger
-        />
+        <div className="section-header">
+          <div>
+            <div className="section-title">
+              RECENT INCIDENTS
+            </div>
 
-        <Metric
-          label="PENDING REVIEW"
-          value={stats.pending}
-          sub="Awaiting verification"
-        />
+            <div className="section-subtitle">
+              Automatically generated AI events
+            </div>
+          </div>
 
-        <Metric
-          label="ACTIVE CAMERA"
-          value="C04"
-          sub="Browser webcam connected"
-        />
+          <div className="event-count">
+            {incidents.length} EVENTS
+          </div>
+        </div>
 
+        <div className="incident-list">
+          {incidents.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">
+                ✓
+              </div>
+
+              <div className="empty-title">
+                NO INCIDENTS
+              </div>
+
+              <div className="empty-subtitle">
+                No restricted-zone intrusions
+                have been detected.
+              </div>
+            </div>
+          ) : (
+            incidents
+              .slice(0, 5)
+              .map((incident) => (
+                <IncidentCard
+                  key={incident.id}
+                  incident={incident}
+                  onStatusChange={() => {}}
+                />
+              ))
+          )}
+        </div>
       </div>
 
-      <div className="main-grid">
-
-        <LiveCamera />
-
-        <IncidentCard
-          incident={activeIncident}
-          onAction={onAction}
-        />
-
-      </div>
-
-      <div className="lower-grid">
-
+      <div className="side-column">
         <RiskPanel
-          incident={activeIncident}
+          incidents={incidents}
+          detections={detections}
         />
 
-        <CameraNetwork />
+        <div className="status-panel">
+          <div className="panel-title">
+            AI DETECTION
+          </div>
 
+          <div className="detection-stat">
+            <div className="big-number">
+              {detections.length}
+            </div>
+
+            <div>
+              <div className="stat-label">
+                PEOPLE
+              </div>
+
+              <div className="stat-sub">
+                Currently visible
+              </div>
+            </div>
+          </div>
+
+          <div className="detection-stat">
+            <div className="big-number danger-number">
+              {activeIntrusions.length}
+            </div>
+
+            <div>
+              <div className="stat-label">
+                INTRUSIONS
+              </div>
+
+              <div className="stat-sub">
+                Inside restricted zone
+              </div>
+            </div>
+          </div>
+
+          <div className="zone-info">
+            <div className="zone-info-title">
+              ACTIVE ZONE
+            </div>
+
+            <div className="zone-info-name">
+              {zone?.name ||
+                "Restricted Zone B"}
+            </div>
+          </div>
+        </div>
+
+        <div className="camera-network-panel">
+          <div className="panel-title">
+            CAMERA NETWORK
+          </div>
+
+          <div className="camera-item">
+            <div className="camera-small-icon">
+              C04
+            </div>
+
+            <div className="camera-small-info">
+              <div className="camera-small-name">
+                Camera C04
+              </div>
+
+              <div className="camera-small-sub">
+                Restricted Zone B
+              </div>
+            </div>
+
+            <div className="camera-online">
+              ONLINE
+            </div>
+          </div>
+        </div>
       </div>
-
-      <Timeline
-        incidents={incidents}
-      />
-    </>
-  )
-}
-
-function Metric({
-  label,
-  value,
-  sub,
-  danger
-}) {
-  return (
-    <div className="metric">
-
-      <div className="metric-label">
-        {label}
-      </div>
-
-      <div
-        className={`metric-value ${
-          danger
-            ? 'danger-text'
-            : ''
-        }`}
-      >
-        {value}
-      </div>
-
-      <div className="metric-sub">
-        {sub}
-      </div>
-
     </div>
-  )
+  );
 }
 
 /* =========================================================
    INCIDENTS PAGE
-   ========================================================= */
+========================================================= */
 
 function IncidentsPage({
   incidents,
-  onAction
+  refreshIncidents,
 }) {
+  const handleStatus = async (
+    id,
+    status
+  ) => {
+    try {
+      const endpoint =
+        status === "Verified"
+          ? `/incidents/${id}/verify`
+          : `/incidents/${id}/dismiss`;
+
+      await fetch(
+        `${API}${endpoint}`,
+        {
+          method: "PUT",
+        }
+      );
+
+      refreshIncidents();
+    } catch (error) {
+      console.error(
+        "Status update failed:",
+        error
+      );
+    }
+  };
+
   return (
-    <section className="card page-card">
-
-      <div className="section-head">
-
+    <div className="page-content">
+      <div className="section-header">
         <div>
-          <div className="eyebrow">
-            DATABASE
+          <div className="section-title">
+            ALL INCIDENTS
           </div>
 
-          <h2>
-            Incident records
-          </h2>
+          <div className="section-subtitle">
+            Live events received from FastAPI
+          </div>
         </div>
 
-        <span className="muted">
-          {incidents.length} records
-        </span>
-
+        <div className="event-count">
+          {incidents.length} EVENTS
+        </div>
       </div>
 
-      <div className="table-wrap">
+      {incidents.length === 0 ? (
+        <div className="empty-state large">
+          <div className="empty-icon">
+            ✓
+          </div>
 
-        <table>
+          <div className="empty-title">
+            NO INCIDENTS LOGGED
+          </div>
 
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Camera</th>
-              <th>Event</th>
-              <th>Risk</th>
-              <th>Time</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-            {incidents.map(i => (
-              <tr key={i.id}>
-
-                <td>
-                  #{i.id}
-                </td>
-
-                <td>
-                  {i.camera}
-                </td>
-
-                <td>
-                  {i.type}
-                </td>
-
-                <td>
-                  <span
-                    className={`badge small ${String(
-                      i.risk_level ||
-                      'LOW'
-                    ).toLowerCase()}`}
-                  >
-                    {i.risk_score}
-                  </span>
-                </td>
-
-                <td>
-                  {i.created_at}
-                </td>
-
-                <td>
-                  {i.status}
-                </td>
-
-                <td>
-
-                  {String(i.status)
-                    .toLowerCase()
-                    .includes(
-                      'awaiting'
-                    ) ? (
-
-                    <div className="table-actions">
-
-                      <button
-                        onClick={() =>
-                          onAction(
-                            'verify',
-                            i.id
-                          )
-                        }
-                      >
-                        Verify
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          onAction(
-                            'dismiss',
-                            i.id
-                          )
-                        }
-                      >
-                        Dismiss
-                      </button>
-
-                    </div>
-
-                  ) : (
-                    <span className="muted">
-                      Closed
-                    </span>
-                  )}
-
-                </td>
-
-              </tr>
-            ))}
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-    </section>
-  )
+          <div className="empty-subtitle">
+            Sentinel AI is monitoring the
+            restricted zone.
+          </div>
+        </div>
+      ) : (
+        <div className="incident-list">
+          {incidents.map((incident) => (
+            <IncidentCard
+              key={incident.id}
+              incident={incident}
+              onStatusChange={
+                handleStatus
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* =========================================================
    CAMERAS PAGE
-   ========================================================= */
+========================================================= */
 
 function CamerasPage() {
   return (
-    <div className="camera-page-grid">
+    <div className="page-content">
+      <div className="section-header">
+        <div>
+          <div className="section-title">
+            CAMERA NETWORK
+          </div>
 
-      <LiveCamera />
-
-      <CameraNetwork />
-
-      <section className="card page-card">
-
-        <div className="eyebrow">
-          CURRENT CONFIGURATION
+          <div className="section-subtitle">
+            Connected surveillance endpoints
+          </div>
         </div>
+      </div>
 
-        <h2>
-          Camera C04
-        </h2>
+      <div className="camera-network-grid">
+        <div className="camera-network-card">
+          <div className="camera-network-top">
+            <div className="camera-code">
+              C04
+            </div>
 
-        <div className="config-grid">
+            <div className="camera-online">
+              ONLINE
+            </div>
+          </div>
 
-          <Detail
-            label="Input"
-            value="Browser Webcam"
-          />
+          <div className="camera-network-title">
+            Camera C04
+          </div>
 
-          <Detail
-            label="Resolution"
-            value="1280 × 720"
-          />
+          <div className="camera-network-location">
+            Restricted Zone B
+          </div>
 
-          <Detail
-            label="Model"
-            value="YOLOv8n"
-          />
+          <div className="camera-specs">
+            <div>
+              <span>MODEL</span>
+              <strong>
+                YOLOv8n
+              </strong>
+            </div>
 
-          <Detail
-            label="Tracker"
-            value="ByteTrack"
-          />
+            <div>
+              <span>TRACKER</span>
+              <strong>
+                ByteTrack
+              </strong>
+            </div>
 
-          <Detail
-            label="Zone"
-            value="Restricted Zone B"
-          />
+            <div>
+              <span>CONFIDENCE</span>
+              <strong>
+                0.45
+              </strong>
+            </div>
 
-          <Detail
-            label="Confidence"
-            value="0.45"
-          />
-
+            <div>
+              <span>STATUS</span>
+              <strong>
+                ACTIVE
+              </strong>
+            </div>
+          </div>
         </div>
-
-      </section>
-
+      </div>
     </div>
-  )
+  );
 }
 
 /* =========================================================
    TIMELINE PAGE
-   ========================================================= */
+========================================================= */
 
 function TimelinePage({
-  incidents
+  incidents,
 }) {
   return (
-    <Timeline
-      incidents={incidents}
-    />
-  )
+    <div className="page-content">
+      <div className="section-header">
+        <div>
+          <div className="section-title">
+            EVENT TIMELINE
+          </div>
+
+          <div className="section-subtitle">
+            Chronological AI security events
+          </div>
+        </div>
+      </div>
+
+      {incidents.length === 0 ? (
+        <div className="empty-state large">
+          <div className="empty-icon">
+            ◷
+          </div>
+
+          <div className="empty-title">
+            TIMELINE CLEAR
+          </div>
+
+          <div className="empty-subtitle">
+            No security events recorded.
+          </div>
+        </div>
+      ) : (
+        <div className="timeline">
+          {incidents.map(
+            (incident, index) => (
+              <div
+                className="timeline-item"
+                key={incident.id}
+              >
+                <div className="timeline-dot">
+                  {index + 1}
+                </div>
+
+                <div className="timeline-content">
+                  <div className="timeline-time">
+                    {formatTime(
+                      incident.created_at
+                    )}
+                  </div>
+
+                  <div className="timeline-title">
+                    {incident.type ||
+                      "Restricted-Zone Intrusion"}
+                  </div>
+
+                  <div className="timeline-meta">
+                    Camera{" "}
+                    {incident.camera ||
+                      "C04"}
+                    {" • "}
+                    {incident.zone ||
+                      "Restricted Zone B"}
+                    {" • Person #"}
+                    {incident.person_id ??
+                      "--"}
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* =========================================================
-   ANALYTICS
-   ========================================================= */
+   ANALYTICS PAGE
+========================================================= */
 
 function AnalyticsPage({
-  incidents
+  incidents,
+  detections,
 }) {
-  const high =
-    incidents.filter(
-      i => i.risk_level === 'HIGH'
-    ).length
+  const high = incidents.filter(
+    (item) =>
+      item.risk_level === "HIGH"
+  ).length;
 
-  const medium =
-    incidents.filter(
-      i => i.risk_level === 'MEDIUM'
-    ).length
+  const medium = incidents.filter(
+    (item) =>
+      item.risk_level === "MEDIUM"
+  ).length;
 
-  const low =
-    incidents.filter(
-      i => i.risk_level === 'LOW'
-    ).length
+  const low = incidents.filter(
+    (item) =>
+      item.risk_level === "LOW"
+  ).length;
 
   return (
-    <div className="analytics-grid">
+    <div className="page-content">
+      <div className="section-header">
+        <div>
+          <div className="section-title">
+            SECURITY ANALYTICS
+          </div>
 
-      <Metric
-        label="TOTAL EVENTS"
-        value={incidents.length}
-        sub="From current database"
-      />
-
-      <Metric
-        label="HIGH RISK"
-        value={high}
-        sub="Risk score ≥ 70"
-        danger
-      />
-
-      <Metric
-        label="MEDIUM RISK"
-        value={medium}
-        sub="Risk score 50–69"
-      />
-
-      <Metric
-        label="LOW RISK"
-        value={low}
-        sub="Risk score < 50"
-      />
-
-      <section className="card page-card chart-card">
-
-        <div className="eyebrow">
-          RISK DISTRIBUTION
+          <div className="section-subtitle">
+            Data generated by the live AI
+            pipeline
+          </div>
         </div>
-
-        <h2>
-          Current incident profile
-        </h2>
-
-        <RiskBar
-          label="HIGH"
-          value={high}
-          total={incidents.length}
-        />
-
-        <RiskBar
-          label="MEDIUM"
-          value={medium}
-          total={incidents.length}
-        />
-
-        <RiskBar
-          label="LOW"
-          value={low}
-          total={incidents.length}
-        />
-
-      </section>
-
-    </div>
-  )
-}
-
-function RiskBar({
-  label,
-  value,
-  total
-}) {
-  const percentage =
-    total
-      ? (value / total) * 100
-      : 0
-
-  return (
-    <div className="bar-row">
-
-      <span>
-        {label}
-      </span>
-
-      <div>
-        <i
-          style={{
-            width: `${percentage}%`
-          }}
-        ></i>
       </div>
 
-      <strong>
-        {value}
-      </strong>
+      <div className="analytics-grid">
+        <div className="analytics-card">
+          <div className="analytics-number">
+            {incidents.length}
+          </div>
 
+          <div className="analytics-label">
+            TOTAL INCIDENTS
+          </div>
+        </div>
+
+        <div className="analytics-card">
+          <div className="analytics-number">
+            {detections.length}
+          </div>
+
+          <div className="analytics-label">
+            CURRENT DETECTIONS
+          </div>
+        </div>
+
+        <div className="analytics-card">
+          <div className="analytics-number">
+            {high}
+          </div>
+
+          <div className="analytics-label">
+            HIGH RISK
+          </div>
+        </div>
+
+        <div className="analytics-card">
+          <div className="analytics-number">
+            {medium}
+          </div>
+
+          <div className="analytics-label">
+            MEDIUM RISK
+          </div>
+        </div>
+
+        <div className="analytics-card">
+          <div className="analytics-number">
+            {low}
+          </div>
+
+          <div className="analytics-label">
+            LOW RISK
+          </div>
+        </div>
+      </div>
     </div>
-  )
+  );
 }
 
 /* =========================================================
    MAIN APP
-   ========================================================= */
+========================================================= */
 
 export default function App() {
-
   const [page, setPage] =
-    useState('dashboard')
+    useState("overview");
 
   const [incidents, setIncidents] =
-    useState([])
+    useState([]);
 
-  const [activeIncident, setActiveIncident] =
-    useState(null)
+  const [detections, setDetections] =
+    useState([]);
 
-  const [apiOnline, setApiOnline] =
-    useState(false)
+  const [zone, setZone] =
+    useState(null);
 
-  /* ---------------------------------------------------------
-     LOAD REAL INCIDENTS
-  --------------------------------------------------------- */
+  const [backendConnected, setBackendConnected] =
+    useState(false);
 
-  async function loadIncidents() {
+  const [cameraConnected, setCameraConnected] =
+    useState(false);
 
-    try {
+  /* -------------------------------------------------------
+     FETCH INCIDENTS
+  ------------------------------------------------------- */
 
-      const response =
-        await fetch(
-          `${API}/incidents`
-        )
+  const fetchIncidents =
+    async () => {
+      try {
+        const response =
+          await fetch(
+            `${API}/incidents`
+          );
 
-      if (!response.ok) {
-        throw new Error(
-          'API error'
-        )
+        if (!response.ok) {
+          throw new Error(
+            "Backend unavailable"
+          );
+        }
+
+        const data =
+          await response.json();
+
+        setIncidents(
+          Array.isArray(data)
+            ? data
+            : []
+        );
+
+        setBackendConnected(true);
+      } catch (error) {
+        console.error(
+          "Incident fetch failed:",
+          error
+        );
+
+        setBackendConnected(false);
       }
+    };
 
-      const data =
-        await response.json()
-
-      setIncidents(
-        Array.isArray(data)
-          ? data
-          : []
-      )
-
-      /*
-        Most recent pending incident.
-      */
-
-      const pending =
-        data.find(
-          i =>
-            String(i.status)
-              .toLowerCase()
-              .includes(
-                'awaiting'
-              )
-        )
-
-      setActiveIncident(
-        pending || null
-      )
-
-      setApiOnline(true)
-
-    } catch (error) {
-
-      console.error(
-        'Incident API error:',
-        error
-      )
-
-      setApiOnline(false)
-
-    }
-  }
-
-  /* ---------------------------------------------------------
-     VERIFY / DISMISS
-  --------------------------------------------------------- */
-
-  async function handleAction(
-    action,
-    id
-  ) {
-
-    try {
-
-      const response =
-        await fetch(
-          `${API}/incidents/${id}/${action}`,
-          {
-            method: 'PUT'
-          }
-        )
-
-      if (!response.ok) {
-        throw new Error(
-          'Action failed'
-        )
-      }
-
-      await loadIncidents()
-
-    } catch (error) {
-
-      console.error(error)
-
-      alert(
-        'Backend action failed.'
-      )
-    }
-  }
-
-  /* ---------------------------------------------------------
-     DATABASE POLLING
-  --------------------------------------------------------- */
+  /* -------------------------------------------------------
+     POLL INCIDENTS
+  ------------------------------------------------------- */
 
   useEffect(() => {
-
-    loadIncidents()
+    fetchIncidents();
 
     const timer =
       setInterval(
-        loadIncidents,
+        fetchIncidents,
         3000
-      )
+      );
 
     return () =>
-      clearInterval(timer)
+      clearInterval(timer);
+  }, []);
 
-  }, [])
+  /* -------------------------------------------------------
+     STATUS
+  ------------------------------------------------------- */
 
-  /* ---------------------------------------------------------
-     UI
-  --------------------------------------------------------- */
+  const systemStatus =
+    useMemo(() => {
+      if (
+        backendConnected &&
+        cameraConnected
+      ) {
+        return "SYSTEMS ONLINE";
+      }
+
+      if (backendConnected) {
+        return "BACKEND ONLINE";
+      }
+
+      return "CONNECTING";
+    }, [
+      backendConnected,
+      cameraConnected,
+    ]);
+
+  /* -------------------------------------------------------
+     RENDER
+  ------------------------------------------------------- */
 
   return (
-    <div className="app-shell">
-
-      <Sidebar
-        page={page}
-        setPage={setPage}
-      />
-
-      <main className="content">
-
-        <Header
+    <>
+      <div className="app">
+        <Sidebar
           page={page}
+          setPage={setPage}
         />
 
-        <div className="connection-banner">
+        <main className="main">
+          <Header page={page} />
 
-          <span
-            className={`dot ${
-              apiOnline
-                ? ''
-                : 'amber'
-            }`}
-          ></span>
+          <div className="system-bar">
+            <div className="system-bar-left">
+              <span className="status-dot"></span>
 
-          {apiOnline
-            ? 'FastAPI backend connected • SQLite synchronized'
-            : 'FastAPI backend not connected'}
+              {systemStatus}
 
-        </div>
+              <span className="system-separator">
+                |
+              </span>
 
-        {page === 'dashboard' && (
-          <Overview
-            incidents={incidents}
-            activeIncident={activeIncident}
-            onAction={handleAction}
-          />
-        )}
+              FastAPI
 
-        {page === 'incidents' && (
-          <IncidentsPage
-            incidents={incidents}
-            onAction={handleAction}
-          />
-        )}
+              <span className="system-separator">
+                |
+              </span>
 
-        {page === 'cameras' && (
-          <CamerasPage />
-        )}
+              SQLite
+            </div>
 
-        {page === 'timeline' && (
-          <TimelinePage
-            incidents={incidents}
-          />
-        )}
+            <div className="system-bar-right">
+              {new Date().toLocaleDateString(
+                [],
+                {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                }
+              )}
+            </div>
+          </div>
 
-        {page === 'analytics' && (
-          <AnalyticsPage
-            incidents={incidents}
-          />
-        )}
+          <div className="content">
+            {page === "overview" && (
+              <Overview
+                incidents={incidents}
+                detections={detections}
+                zone={zone}
+                setDetections={
+                  setDetections
+                }
+                setZone={setZone}
+                setCameraConnected={
+                  setCameraConnected
+                }
+              />
+            )}
 
-      </main>
+            {page === "incidents" && (
+              <IncidentsPage
+                incidents={incidents}
+                refreshIncidents={
+                  fetchIncidents
+                }
+              />
+            )}
 
-    </div>
-  )
+            {page === "cameras" && (
+              <CamerasPage />
+            )}
+
+            {page === "timeline" && (
+              <TimelinePage
+                incidents={incidents}
+              />
+            )}
+
+            {page === "analytics" && (
+              <AnalyticsPage
+                incidents={incidents}
+                detections={detections}
+              />
+            )}
+          </div>
+        </main>
+      </div>
+
+      {/* ===================================================
+          GLOBAL STYLES
+      =================================================== */}
+
+      <style>{`
+
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          font-family:
+            Inter,
+            Arial,
+            Helvetica,
+            sans-serif;
+          background: #07111f;
+          color: #e8eef7;
+        }
+
+        button {
+          font-family: inherit;
+        }
+
+        .app {
+          min-height: 100vh;
+          display: flex;
+          background:
+            radial-gradient(
+              circle at top right,
+              rgba(0, 140, 255, 0.08),
+              transparent 30%
+            ),
+            #07111f;
+        }
+
+        /* ===============================================
+           SIDEBAR
+        =============================================== */
+
+        .sidebar {
+          width: 240px;
+          min-height: 100vh;
+          border-right: 1px solid #1c2b3d;
+          background: #091522;
+          display: flex;
+          flex-direction: column;
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+        }
+
+        .brand {
+          height: 84px;
+          padding: 18px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          border-bottom: 1px solid #1c2b3d;
+        }
+
+        .brand-logo {
+          width: 42px;
+          height: 42px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #102b43;
+          border: 1px solid #1d567f;
+          color: #46b9ff;
+          font-size: 22px;
+          font-weight: 900;
+        }
+
+        .brand-title {
+          font-size: 14px;
+          font-weight: 900;
+          letter-spacing: 1.5px;
+        }
+
+        .brand-subtitle {
+          margin-top: 3px;
+          font-size: 8px;
+          color: #64778b;
+          letter-spacing: 1px;
+        }
+
+        .nav {
+          padding: 18px 12px;
+        }
+
+        .nav-item {
+          width: 100%;
+          border: none;
+          background: transparent;
+          color: #73879c;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          border-radius: 7px;
+          cursor: pointer;
+          text-align: left;
+          margin-bottom: 5px;
+          transition: 0.2s;
+        }
+
+        .nav-item:hover {
+          background: #102033;
+          color: #dce8f4;
+        }
+
+        .nav-item.active {
+          background: #12304a;
+          color: #55c2ff;
+          box-shadow:
+            inset 3px 0 0 #32a9ef;
+        }
+
+        .nav-icon {
+          width: 20px;
+          text-align: center;
+          font-size: 17px;
+        }
+
+        .sidebar-bottom {
+          margin-top: auto;
+          padding: 15px;
+          border-top: 1px solid #1c2b3d;
+        }
+
+        .system-status {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px;
+          border-radius: 7px;
+          background: #0d1d2c;
+        }
+
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          min-width: 8px;
+          border-radius: 50%;
+          background: #28d77c;
+          box-shadow:
+            0 0 10px
+            rgba(40, 215, 124, 0.7);
+        }
+
+        .status-title {
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .status-sub {
+          font-size: 9px;
+          color: #64788c;
+          margin-top: 3px;
+        }
+
+        /* ===============================================
+           MAIN
+        =============================================== */
+
+        .main {
+          margin-left: 240px;
+          width: calc(100% - 240px);
+          min-height: 100vh;
+        }
+
+        .topbar {
+          height: 84px;
+          padding: 0 26px;
+          border-bottom: 1px solid #1c2b3d;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #091522;
+        }
+
+        .page-title {
+          font-size: 20px;
+          font-weight: 800;
+        }
+
+        .page-subtitle {
+          color: #64788c;
+          font-size: 11px;
+          margin-top: 4px;
+        }
+
+        .topbar-right {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+        }
+
+        .connection {
+          color: #67d99a;
+          font-size: 9px;
+          font-weight: 800;
+          display: flex;
+          align-items: center;
+          gap: 7px;
+        }
+
+        .live-pill {
+          padding: 7px 10px;
+          border-radius: 5px;
+          background: #14212e;
+          color: #d9e4ef;
+          font-size: 9px;
+          font-weight: 900;
+        }
+
+        .live-dot {
+          display: inline-block;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #ff405a;
+          margin-right: 5px;
+        }
+
+        .system-bar {
+          height: 34px;
+          border-bottom: 1px solid #182839;
+          background: #07111d;
+          padding: 0 26px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          color: #617488;
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+        }
+
+        .system-bar-left {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+        }
+
+        .system-separator {
+          color: #304255;
+          margin: 0 3px;
+        }
+
+        .content {
+          padding: 22px 26px 40px;
+        }
+
+        /* ===============================================
+           DASHBOARD GRID
+        =============================================== */
+
+        .dashboard-grid {
+          display: grid;
+          grid-template-columns:
+            minmax(0, 1fr)
+            310px;
+          gap: 20px;
+        }
+
+        .main-column,
+        .side-column {
+          min-width: 0;
+        }
+
+        .side-column {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        /* ===============================================
+           CAMERA
+        =============================================== */
+
+        .camera-panel {
+          background: #0b1827;
+          border: 1px solid #1b2d40;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+
+        .camera-header {
+          min-height: 65px;
+          padding: 13px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-bottom: 1px solid #1b2d40;
+        }
+
+        .camera-title {
+          font-size: 12px;
+          font-weight: 900;
+          letter-spacing: 1px;
+        }
+
+        .camera-subtitle {
+          font-size: 9px;
+          color: #687c90;
+          margin-top: 4px;
+        }
+
+        .camera-status {
+          color: #56dc96;
+          font-size: 9px;
+          font-weight: 900;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .camera-container {
+          position: relative;
+          width: 100%;
+          background: #02070c;
+          overflow: hidden;
+        }
+
+        .video-wrapper {
+          position: relative;
+          width: 100%;
+          max-height: 70vh;
+          overflow: hidden;
+          background: #02070c;
+        }
+
+        .camera-video {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: fill;
+          display: block;
+        }
+
+        .camera-loading {
+          min-height: 420px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #7890a6;
+          font-size: 12px;
+        }
+
+        .camera-error {
+          min-height: 420px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 30px;
+        }
+
+        .error-icon {
+          width: 46px;
+          height: 46px;
+          border-radius: 50%;
+          background: #3a1720;
+          color: #ff5470;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 900;
+          font-size: 20px;
+        }
+
+        .error-title {
+          margin-top: 12px;
+          font-weight: 900;
+          font-size: 12px;
+        }
+
+        .error-message {
+          margin-top: 6px;
+          color: #ff7b91;
+          font-size: 10px;
+        }
+
+        .error-help {
+          margin-top: 10px;
+          color: #687c90;
+          font-size: 9px;
+        }
+
+        /* ===============================================
+           RESTRICTED ZONE
+        =============================================== */
+
+        .restricted-zone {
+          position: absolute;
+          border: 2px dashed #ffbd3f;
+          background: rgba(
+            255,
+            180,
+            30,
+            0.06
+          );
+          z-index: 5;
+          pointer-events: none;
+        }
+
+        .zone-title {
+          position: absolute;
+          left: 6px;
+          top: 6px;
+          padding: 4px 7px;
+          background: rgba(
+            35,
+            26,
+            4,
+            0.92
+          );
+          color: #ffc84d;
+          border: 1px solid
+            rgba(
+              255,
+              193,
+              55,
+              0.6
+            );
+          border-radius: 4px;
+          font-size: 9px;
+          font-weight: 900;
+          white-space: nowrap;
+        }
+
+        /* ===============================================
+           PERSON BOX
+        =============================================== */
+
+        .person-box {
+          position: absolute;
+          z-index: 10;
+          pointer-events: none;
+          min-width: 35px;
+        }
+
+        .person-outside {
+          border: 2px solid #29d87c;
+          box-shadow:
+            0 0 8px
+            rgba(41, 216, 124, 0.35);
+        }
+
+        .person-inside {
+          border: 3px solid #ff405d;
+          box-shadow:
+            0 0 14px
+            rgba(255, 64, 93, 0.55);
+          animation:
+            intrusionPulse 1s
+            infinite;
+        }
+
+        @keyframes intrusionPulse {
+          0% {
+            box-shadow:
+              0 0 5px
+              rgba(255, 64, 93, 0.4);
+          }
+
+          50% {
+            box-shadow:
+              0 0 18px
+              rgba(255, 64, 93, 0.8);
+          }
+
+          100% {
+            box-shadow:
+              0 0 5px
+              rgba(255, 64, 93, 0.4);
+          }
+        }
+
+        .person-label {
+          position: absolute;
+          left: -2px;
+          top: -26px;
+          padding: 5px 7px;
+          border-radius: 4px 4px 0 0;
+          background: #08131f;
+          border: 1px solid #294054;
+          color: #eaf3fc;
+          font-size: 9px;
+          font-weight: 900;
+          white-space: nowrap;
+        }
+
+        .person-inside
+          .person-label {
+          background: #5b1422;
+          border-color: #ff405d;
+        }
+
+        .person-outside
+          .person-label {
+          background: #0a3925;
+          border-color: #29d87c;
+        }
+
+        .zone-label {
+          position: absolute;
+          left: 0;
+          bottom: -25px;
+          padding: 5px 7px;
+          border-radius: 4px;
+          color: white;
+          font-size: 9px;
+          font-weight: 900;
+          white-space: nowrap;
+        }
+
+        .zone-label-danger {
+          background: rgba(
+            175,
+            10,
+            35,
+            0.96
+          );
+        }
+
+        .zone-label-safe {
+          background: rgba(
+            0,
+            105,
+            58,
+            0.96
+          );
+        }
+
+        .detection-info {
+          position: absolute;
+          right: 0;
+          top: 0;
+          transform:
+            translateX(
+              calc(100% + 6px)
+            );
+          background: rgba(
+            5,
+            13,
+            22,
+            0.92
+          );
+          border: 1px solid #263b50;
+          border-radius: 4px;
+          padding: 6px 8px;
+          color: #a7bacd;
+          font-size: 8px;
+          line-height: 1.6;
+          white-space: nowrap;
+        }
+
+        .night-warning {
+          color: #ffc84d;
+          font-weight: 900;
+        }
+
+        /* ===============================================
+           HUD
+        =============================================== */
+
+        .camera-hud {
+          position: absolute;
+          left: 12px;
+          bottom: 12px;
+          z-index: 20;
+          display: flex;
+          gap: 5px;
+        }
+
+        .camera-hud div {
+          padding: 5px 7px;
+          background: rgba(
+            3,
+            10,
+            17,
+            0.8
+          );
+          border: 1px solid #26384a;
+          border-radius: 3px;
+          color: #8da1b4;
+          font-size: 8px;
+          font-weight: 800;
+        }
+
+        .detection-counter {
+          position: absolute;
+          right: 12px;
+          bottom: 12px;
+          z-index: 20;
+          padding: 7px 9px;
+          background: rgba(
+            3,
+            10,
+            17,
+            0.86
+          );
+          border: 1px solid #26384a;
+          border-radius: 4px;
+          font-size: 8px;
+          font-weight: 900;
+          color: #c4d3e1;
+        }
+
+        .last-update {
+          position: absolute;
+          right: 12px;
+          top: 12px;
+          z-index: 20;
+          padding: 5px 7px;
+          background: rgba(
+            3,
+            10,
+            17,
+            0.8
+          );
+          color: #71869a;
+          font-size: 8px;
+          border-radius: 3px;
+        }
+
+        .camera-footer {
+          display: grid;
+          grid-template-columns:
+            repeat(4, 1fr);
+          border-top: 1px solid #1b2d40;
+        }
+
+        .camera-footer > div {
+          padding: 10px 13px;
+          border-right: 1px solid #1b2d40;
+        }
+
+        .camera-footer > div:last-child {
+          border-right: none;
+        }
+
+        .footer-label {
+          display: block;
+          color: #5d7185;
+          font-size: 7px;
+          font-weight: 800;
+          margin-bottom: 4px;
+        }
+
+        .camera-footer strong {
+          font-size: 9px;
+          color: #d5e2ee;
+        }
+
+        /* ===============================================
+           PANELS
+        =============================================== */
+
+        .risk-panel,
+        .status-panel,
+        .camera-network-panel {
+          background: #0b1827;
+          border: 1px solid #1b2d40;
+          border-radius: 8px;
+          padding: 16px;
+        }
+
+        .panel-title-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+        }
+
+        .panel-title {
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: 0.8px;
+        }
+
+        .panel-subtitle {
+          color: #60758a;
+          font-size: 8px;
+          margin-top: 4px;
+        }
+
+        .threat-indicator {
+          padding: 5px 7px;
+          border-radius: 4px;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .threat-indicator.safe {
+          background: #0d3926;
+          color: #48dd93;
+        }
+
+        .threat-indicator.danger {
+          background: #4a1420;
+          color: #ff5870;
+        }
+
+        .risk-main {
+          margin: 20px 0;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .risk-circle {
+          width: 58px;
+          height: 58px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 22px;
+          font-weight: 900;
+        }
+
+        .risk-safe {
+          background: #0e3926;
+          border: 2px solid #2bd77d;
+          color: #43e18e;
+        }
+
+        .risk-danger {
+          background: #45121d;
+          border: 2px solid #ff405d;
+          color: #ff405d;
+        }
+
+        .risk-number {
+          font-size: 26px;
+          font-weight: 900;
+        }
+
+        .risk-label {
+          font-size: 8px;
+          color: #62768b;
+          font-weight: 800;
+        }
+
+        .risk-details {
+          border-top: 1px solid #1b2d40;
+          padding-top: 10px;
+        }
+
+        .detail-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 7px 0;
+          color: #71859a;
+          font-size: 9px;
+        }
+
+        .detail-row strong {
+          color: #d9e5f0;
+        }
+
+        .risk-text.high {
+          color: #ff4f68;
+        }
+
+        .risk-text.medium {
+          color: #ffc247;
+        }
+
+        .risk-text.low {
+          color: #48dc91;
+        }
+
+        .detection-stat {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 15px 0;
+          border-bottom: 1px solid #1b2d40;
+        }
+
+        .big-number {
+          font-size: 25px;
+          font-weight: 900;
+          color: #55c2ff;
+        }
+
+        .danger-number {
+          color: #ff4d67;
+        }
+
+        .stat-label {
+          font-size: 9px;
+          font-weight: 900;
+        }
+
+        .stat-sub {
+          font-size: 8px;
+          color: #61768a;
+          margin-top: 3px;
+        }
+
+        .zone-info {
+          padding-top: 15px;
+        }
+
+        .zone-info-title {
+          color: #60758a;
+          font-size: 8px;
+          font-weight: 800;
+        }
+
+        .zone-info-name {
+          margin-top: 4px;
+          color: #e3edf7;
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        /* ===============================================
+           SECTIONS
+        =============================================== */
+
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin: 20px 0 12px;
+        }
+
+        .section-title {
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.7px;
+        }
+
+        .section-subtitle {
+          color: #60758a;
+          font-size: 8px;
+          margin-top: 4px;
+        }
+
+        .event-count {
+          color: #6e8499;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        /* ===============================================
+           INCIDENTS
+        =============================================== */
+
+        .incident-list {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .incident-card {
+          background: #0b1827;
+          border: 1px solid #1b2d40;
+          border-radius: 7px;
+          padding: 13px;
+        }
+
+        .incident-card-header {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .incident-icon {
+          width: 30px;
+          height: 30px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #401522;
+          color: #ff4d68;
+        }
+
+        .incident-main {
+          flex: 1;
+        }
+
+        .incident-title {
+          font-size: 10px;
+          font-weight: 900;
+        }
+
+        .incident-meta {
+          color: #62778c;
+          font-size: 8px;
+          margin-top: 3px;
+        }
+
+        .risk-badge {
+          padding: 5px 7px;
+          border-radius: 4px;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .risk-badge.high {
+          background: #47131e;
+          color: #ff526a;
+        }
+
+        .risk-badge.medium {
+          background: #443616;
+          color: #ffca55;
+        }
+
+        .risk-badge.low {
+          background: #103b29;
+          color: #50dc92;
+        }
+
+        .incident-details {
+          display: grid;
+          grid-template-columns:
+            repeat(4, 1fr);
+          margin-top: 12px;
+          border-top: 1px solid #1b2d40;
+          border-bottom: 1px solid #1b2d40;
+        }
+
+        .incident-details > div {
+          padding: 9px;
+          border-right: 1px solid #1b2d40;
+        }
+
+        .incident-details > div:last-child {
+          border-right: none;
+        }
+
+        .incident-details span {
+          display: block;
+          color: #5e7388;
+          font-size: 7px;
+          font-weight: 800;
+          margin-bottom: 4px;
+        }
+
+        .incident-details strong {
+          font-size: 9px;
+        }
+
+        .incident-footer {
+          padding-top: 10px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .incident-time {
+          color: #60758a;
+          font-size: 8px;
+        }
+
+        .incident-actions {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+        }
+
+        .incident-status {
+          color: #ffbd4b;
+          font-size: 8px;
+          font-weight: 800;
+        }
+
+        .incident-status.verified {
+          color: #49dc91;
+        }
+
+        .incident-actions button {
+          border: 1px solid #2c4054;
+          background: #102133;
+          color: #b8c9d8;
+          padding: 5px 8px;
+          border-radius: 4px;
+          font-size: 7px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .incident-actions button:hover {
+          background: #183047;
+        }
+
+        .incident-actions .dismiss-btn {
+          color: #ff7186;
+        }
+
+        /* ===============================================
+           EMPTY
+        =============================================== */
+
+        .empty-state {
+          background: #0b1827;
+          border: 1px solid #1b2d40;
+          border-radius: 8px;
+          padding: 35px;
+          text-align: center;
+        }
+
+        .empty-state.large {
+          padding: 70px 30px;
+        }
+
+        .empty-icon {
+          font-size: 24px;
+          color: #3fda8a;
+        }
+
+        .empty-title {
+          margin-top: 10px;
+          font-size: 11px;
+          font-weight: 900;
+        }
+
+        .empty-subtitle {
+          margin-top: 5px;
+          color: #60758a;
+          font-size: 9px;
+        }
+
+        /* ===============================================
+           CAMERA NETWORK
+        =============================================== */
+
+        .camera-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 14px;
+          padding-top: 12px;
+          border-top: 1px solid #1b2d40;
+        }
+
+        .camera-small-icon {
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #102c42;
+          color: #54bfff;
+          border-radius: 5px;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .camera-small-info {
+          flex: 1;
+        }
+
+        .camera-small-name {
+          font-size: 9px;
+          font-weight: 900;
+        }
+
+        .camera-small-sub {
+          color: #60758a;
+          font-size: 7px;
+          margin-top: 3px;
+        }
+
+        .camera-online {
+          color: #45da8e;
+          font-size: 7px;
+          font-weight: 900;
+        }
+
+        /* ===============================================
+           OTHER PAGES
+        =============================================== */
+
+        .page-content {
+          width: 100%;
+        }
+
+        .camera-network-grid {
+          display: grid;
+          grid-template-columns:
+            repeat(
+              auto-fit,
+              minmax(260px, 1fr)
+            );
+          gap: 15px;
+        }
+
+        .camera-network-card {
+          background: #0b1827;
+          border: 1px solid #1b2d40;
+          border-radius: 8px;
+          padding: 18px;
+        }
+
+        .camera-network-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .camera-code {
+          width: 40px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 6px;
+          background: #12314a;
+          color: #55c2ff;
+          font-size: 10px;
+          font-weight: 900;
+        }
+
+        .camera-network-title {
+          margin-top: 15px;
+          font-size: 13px;
+          font-weight: 900;
+        }
+
+        .camera-network-location {
+          color: #61758a;
+          font-size: 9px;
+          margin-top: 4px;
+        }
+
+        .camera-specs {
+          display: grid;
+          grid-template-columns:
+            repeat(2, 1fr);
+          gap: 10px;
+          margin-top: 18px;
+          border-top: 1px solid #1b2d40;
+          padding-top: 14px;
+        }
+
+        .camera-specs span {
+          display: block;
+          color: #5d7286;
+          font-size: 7px;
+          margin-bottom: 4px;
+        }
+
+        .camera-specs strong {
+          font-size: 9px;
+        }
+
+        /* ===============================================
+           TIMELINE
+        =============================================== */
+
+        .timeline {
+          position: relative;
+          padding-left: 25px;
+        }
+
+        .timeline::before {
+          content: "";
+          position: absolute;
+          left: 8px;
+          top: 0;
+          bottom: 0;
+          width: 1px;
+          background: #24384b;
+        }
+
+        .timeline-item {
+          position: relative;
+          display: flex;
+          gap: 15px;
+          padding-bottom: 20px;
+        }
+
+        .timeline-dot {
+          position: absolute;
+          left: -25px;
+          width: 17px;
+          height: 17px;
+          border-radius: 50%;
+          background: #11334c;
+          border: 1px solid #2c668d;
+          color: #58c3ff;
+          font-size: 7px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .timeline-content {
+          background: #0b1827;
+          border: 1px solid #1b2d40;
+          border-radius: 7px;
+          padding: 13px;
+          width: 100%;
+        }
+
+        .timeline-time {
+          color: #55c2ff;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .timeline-title {
+          margin-top: 6px;
+          font-size: 10px;
+          font-weight: 900;
+        }
+
+        .timeline-meta {
+          color: #64788c;
+          font-size: 8px;
+          margin-top: 4px;
+        }
+
+        /* ===============================================
+           ANALYTICS
+        =============================================== */
+
+        .analytics-grid {
+          display: grid;
+          grid-template-columns:
+            repeat(
+              auto-fit,
+              minmax(170px, 1fr)
+            );
+          gap: 15px;
+        }
+
+        .analytics-card {
+          background: #0b1827;
+          border: 1px solid #1b2d40;
+          border-radius: 8px;
+          padding: 22px;
+        }
+
+        .analytics-number {
+          font-size: 30px;
+          font-weight: 900;
+          color: #55c2ff;
+        }
+
+        .analytics-label {
+          margin-top: 6px;
+          color: #63788d;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        /* ===============================================
+           RESPONSIVE
+        =============================================== */
+
+        @media (
+          max-width: 1050px
+        ) {
+          .dashboard-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .side-column {
+            display: grid;
+            grid-template-columns:
+              repeat(
+                2,
+                1fr
+              );
+          }
+        }
+
+        @media (
+          max-width: 760px
+        ) {
+          .sidebar {
+            width: 65px;
+          }
+
+          .brand {
+            justify-content: center;
+            padding: 10px;
+          }
+
+          .brand > div:last-child {
+            display: none;
+          }
+
+          .nav-item {
+            justify-content: center;
+          }
+
+          .nav-item span:last-child {
+            display: none;
+          }
+
+          .main {
+            margin-left: 65px;
+            width: calc(
+              100% - 65px
+            );
+          }
+
+          .topbar {
+            padding: 0 15px;
+          }
+
+          .page-subtitle,
+          .connection {
+            display: none;
+          }
+
+          .content {
+            padding: 15px;
+          }
+
+          .side-column {
+            display: flex;
+          }
+
+          .camera-footer {
+            grid-template-columns:
+              repeat(2, 1fr);
+          }
+
+          .incident-details {
+            grid-template-columns:
+              repeat(2, 1fr);
+          }
+
+          .detection-info {
+            display: none;
+          }
+        }
+
+      `}</style>
+    </>
+  );
 }
