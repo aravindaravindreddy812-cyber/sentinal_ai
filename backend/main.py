@@ -1,88 +1,33 @@
-import os
-import asyncio
-import threading
-from datetime import datetime
-
+from fastapi import FastAPI, Request
 import cv2
 import numpy as np
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
-
+from fastapi.middleware.cors import CORSMiddleware
 from database import get_connection, create_table
+from datetime import datetime
+from pathlib import Path
+import time
 
 
 # ============================================================
-# SENTINEL AI
-# YOLO + BYTE TRACK + VIRTUAL FENCE + RISK + INCIDENTS
+# FASTAPI
 # ============================================================
 
 app = FastAPI(
     title="SentinelAI API",
     description="AI-powered security incident monitoring system",
-    version="2.0"
+    version="1.0"
 )
-
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-MODEL_NAME = "yolov8n.pt"
-
-CONFIDENCE_THRESHOLD = 0.45
-
-CAMERA_NAME = "C04"
-ZONE_NAME = "Restricted Zone B"
-
-# Original reference resolution
-REFERENCE_WIDTH = 1280
-REFERENCE_HEIGHT = 720
-
-# Virtual restricted zone
-ZONE_X1 = 500
-ZONE_Y1 = 250
-ZONE_X2 = 900
-ZONE_Y2 = 600
-
-TRACK_TIMEOUT = 30
 
 
 # ============================================================
 # YOLO MODEL
 # ============================================================
 
-MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "vision",
-    "yolov8n.pt"
-)
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR.parent / "vision" / "yolov8n.pt"
 
-print("Loading SentinelAI YOLO model from:")
-print(MODEL_PATH)
-
-model = YOLO(MODEL_PATH)
-
-print("YOLO model loaded successfully.")
-
-
-# ============================================================
-# THREAD LOCK
-# ============================================================
-
-# YOLO/ByteTrack state must not be accessed concurrently.
-model_lock = threading.Lock()
-
-
-# ============================================================
-# TRACKING STATE
-# ============================================================
-
-tracking_state = {}
-
-previous_positions = {}
-entry_times = {}
-incident_created = {}
+model = YOLO(str(MODEL_PATH))
 
 
 # ============================================================
@@ -91,13 +36,17 @@ incident_created = {}
 
 app.add_middleware(
     CORSMiddleware,
+
     allow_origins=[
         "http://localhost:5173",
         "http://localhost:5174",
         "https://sentinel-ai-frontend-xufy.onrender.com"
     ],
+
     allow_credentials=True,
+
     allow_methods=["*"],
+
     allow_headers=["*"],
 )
 
@@ -110,45 +59,86 @@ create_table()
 
 
 # ============================================================
-# HEALTH
+# TRACKING SETTINGS
 # ============================================================
 
-@app.get("/health")
-def health():
-    return {
-        "status": "healthy",
-        "service": "SentinelAI",
-        "model": "YOLOv8n",
-        "tracker": "ByteTrack"
-    }
+CONFIDENCE_THRESHOLD = 0.45
+
+PERSISTENCE_TIME = 10
+
+CAMERA_ID = "C04"
+
+ZONE_NAME = "Restricted Zone B"
 
 
 # ============================================================
-# HOME
+# TRACKING STATE
+# ============================================================
+
+# Previous center position of each tracked person
+previous_positions = {}
+
+
+# Time when person entered restricted zone
+entry_times = {}
+
+
+# Whether an incident has already been created
+# for the current zone entry
+incident_created = {}
+
+
+# Whether person was inside zone during previous frame
+previous_inside = {}
+
+
+# Last time each person was seen
+last_seen = {}
+
+
+# ============================================================
+# ORIGINAL ZONE COORDINATES
+# ============================================================
+
+# These are based on your original 1280x720 prototype.
+
+ZONE_X1 = 500
+ZONE_Y1 = 250
+
+ZONE_X2 = 900
+ZONE_Y2 = 600
+
+
+# ============================================================
+# ROOT
 # ============================================================
 
 @app.get("/")
 def home():
+
     return {
         "system": "SentinelAI",
         "status": "online",
-        "message": "AI security monitoring API is running"
+        "message": "Security monitoring API is running"
     }
 
 
 # ============================================================
-# INCIDENTS
+# GET ALL INCIDENTS
 # ============================================================
 
 @app.get("/incidents")
 def get_incidents():
 
     connection = get_connection()
+
     cursor = connection.cursor()
 
-    cursor.execute(
-        "SELECT * FROM incidents ORDER BY id DESC"
-    )
+    cursor.execute("""
+        SELECT *
+        FROM incidents
+        ORDER BY id DESC
+    """)
 
     rows = cursor.fetchall()
 
@@ -158,22 +148,23 @@ def get_incidents():
 
 
 # ============================================================
-# CREATE MANUAL INCIDENT
+# CREATE INCIDENT
 # ============================================================
 
 @app.post("/incidents")
 def create_incident(incident: dict):
 
     connection = get_connection()
+
     cursor = connection.cursor()
 
     created_at = datetime.now().strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
-    cursor.execute(
-        """
-        INSERT INTO incidents (
+    cursor.execute("""
+        INSERT INTO incidents
+        (
             type,
             camera,
             zone,
@@ -186,20 +177,18 @@ def create_incident(incident: dict):
             status
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            incident.get("type"),
-            incident.get("camera"),
-            incident.get("zone"),
-            incident.get("person_id"),
-            incident.get("movement"),
-            incident.get("duration"),
-            incident.get("risk_score"),
-            incident.get("risk_level"),
-            created_at,
-            "Awaiting Verification"
-        )
-    )
+    """, (
+        incident.get("type"),
+        incident.get("camera"),
+        incident.get("zone"),
+        incident.get("person_id"),
+        incident.get("movement"),
+        incident.get("duration"),
+        incident.get("risk_score"),
+        incident.get("risk_level"),
+        created_at,
+        "Awaiting Verification"
+    ))
 
     connection.commit()
 
@@ -221,18 +210,20 @@ def create_incident(incident: dict):
 def verify_incident(incident_id: int):
 
     connection = get_connection()
+
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         UPDATE incidents
         SET status = ?
         WHERE id = ?
-        """,
-        ("Verified", incident_id)
-    )
+    """, (
+        "Verified",
+        incident_id
+    ))
 
     connection.commit()
+
     connection.close()
 
     return {
@@ -249,18 +240,20 @@ def verify_incident(incident_id: int):
 def dismiss_incident(incident_id: int):
 
     connection = get_connection()
+
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         UPDATE incidents
         SET status = ?
         WHERE id = ?
-        """,
-        ("Dismissed", incident_id)
-    )
+    """, (
+        "Dismissed",
+        incident_id
+    ))
 
     connection.commit()
+
     connection.close()
 
     return {
@@ -270,131 +263,119 @@ def dismiss_incident(incident_id: int):
 
 
 # ============================================================
-# ZONE CALCULATION
+# HELPER:
+# CHECK WHETHER PERSON IS INSIDE RESTRICTED ZONE
 # ============================================================
 
-def get_scaled_zone(width, height):
+def is_inside_zone(x, y, frame_width, frame_height):
 
-    scale_x = width / REFERENCE_WIDTH
-    scale_y = height / REFERENCE_HEIGHT
+    # Scale original 1280x720 zone
+    # to whatever webcam resolution is received.
 
-    return {
-        "x1": int(ZONE_X1 * scale_x),
-        "y1": int(ZONE_Y1 * scale_y),
-        "x2": int(ZONE_X2 * scale_x),
-        "y2": int(ZONE_Y2 * scale_y)
-    }
+    scale_x = frame_width / 1280
+    scale_y = frame_height / 720
 
+    zx1 = ZONE_X1 * scale_x
+    zy1 = ZONE_Y1 * scale_y
 
-# ============================================================
-# INSIDE ZONE
-# ============================================================
-
-def is_inside_zone(x, y, zone):
+    zx2 = ZONE_X2 * scale_x
+    zy2 = ZONE_Y2 * scale_y
 
     return (
-        zone["x1"] <= x <= zone["x2"]
-        and
-        zone["y1"] <= y <= zone["y2"]
+        x >= zx1
+        and x <= zx2
+        and y >= zy1
+        and y <= zy2
     )
 
 
 # ============================================================
-# DISTANCE TO ZONE
+# HELPER:
+# MOVEMENT DIRECTION
 # ============================================================
 
-def distance_to_zone(x, y, zone):
-
-    dx = max(
-        zone["x1"] - x,
-        0,
-        x - zone["x2"]
-    )
-
-    dy = max(
-        zone["y1"] - y,
-        0,
-        y - zone["y2"]
-    )
-
-    return (dx ** 2 + dy ** 2) ** 0.5
-
-
-# ============================================================
-# MOVEMENT
-# ============================================================
-
-def calculate_movement(track_id, current_x, current_y):
-
-    previous = previous_positions.get(track_id)
-
-    previous_positions[track_id] = (
-        current_x,
-        current_y
-    )
+def calculate_movement(previous, current):
 
     if previous is None:
-        return "UNKNOWN"
+
+        return "STATIONARY"
 
     previous_x, previous_y = previous
 
+    current_x, current_y = current
+
     dx = current_x - previous_x
+
     dy = current_y - previous_y
 
-    if abs(dx) < 5 and abs(dy) < 5:
+    threshold = 8
+
+    if abs(dx) < threshold and abs(dy) < threshold:
+
         return "STATIONARY"
 
-    if abs(dy) > abs(dx):
+    if abs(dx) > abs(dy):
+
+        if dx > 0:
+            return "WEST → EAST"
+
+        return "EAST → WEST"
+
+    else:
 
         if dy > 0:
             return "NORTH → SOUTH"
 
         return "SOUTH → NORTH"
 
-    if dx > 0:
-        return "WEST → EAST"
-
-    return "EAST → WEST"
-
 
 # ============================================================
-# RISK
+# HELPER:
+# RISK SCORE
 # ============================================================
 
 def calculate_risk(duration):
 
     current_hour = datetime.now().hour
 
-    night_context = (
+    is_night = (
         current_hour >= 20
         or current_hour < 6
     )
 
+    # Base restricted-zone risk
     risk_score = 40
 
-    if night_context:
+    # Night movement
+    if is_night:
+
         risk_score += 20
 
-    if duration >= 10:
+    # Persistence
+    if duration >= PERSISTENCE_TIME:
+
         risk_score += 15
 
+    # Keep within 0–100
+    risk_score = min(risk_score, 100)
+
     if risk_score >= 61:
+
         risk_level = "HIGH"
 
     elif risk_score >= 31:
+
         risk_level = "MEDIUM"
 
     else:
+
         risk_level = "LOW"
 
-    return (
-        risk_score,
-        risk_level,
-        night_context
-    )
+    return risk_score, risk_level, is_night
 
 
 # ============================================================
+# HELPER:
 # CREATE AUTOMATIC INCIDENT
 # ============================================================
 
@@ -409,15 +390,16 @@ def create_automatic_incident(
     try:
 
         connection = get_connection()
+
         cursor = connection.cursor()
 
         created_at = datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
         )
 
-        cursor.execute(
-            """
-            INSERT INTO incidents (
+        cursor.execute("""
+            INSERT INTO incidents
+            (
                 type,
                 camera,
                 zone,
@@ -430,20 +412,29 @@ def create_automatic_incident(
                 status
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "Restricted-Zone Intrusion",
-                CAMERA_NAME,
-                ZONE_NAME,
-                track_id,
-                movement,
-                duration,
-                risk_score,
-                risk_level,
-                created_at,
-                "Awaiting Verification"
-            )
-        )
+        """, (
+
+            "Restricted-Zone Intrusion",
+
+            CAMERA_ID,
+
+            ZONE_NAME,
+
+            track_id,
+
+            movement,
+
+            round(duration, 1),
+
+            risk_score,
+
+            risk_level,
+
+            created_at,
+
+            "Awaiting Verification"
+
+        ))
 
         connection.commit()
 
@@ -451,441 +442,45 @@ def create_automatic_incident(
 
         connection.close()
 
-        incident_created[track_id] = incident_id
-
-        print(
-            "INTRUSION DETECTED | "
-            f"Person ID: {track_id} | "
-            f"Incident: {incident_id} | "
-            f"Risk: {risk_level}"
-        )
+        print()
+        print("======================================")
+        print("🚨 INTRUSION DETECTED")
+        print(f"Incident  : #{incident_id}")
+        print(f"Person ID : {track_id}")
+        print(f"Camera    : {CAMERA_ID}")
+        print(f"Zone      : {ZONE_NAME}")
+        print(f"Movement  : {movement}")
+        print(f"Duration  : {round(duration, 1)} sec")
+        print(f"Risk      : {risk_score}/100")
+        print(f"Level     : {risk_level}")
+        print("Status    : Awaiting Verification")
+        print("======================================")
+        print()
 
         return incident_id
 
-    except Exception as error:
+    except Exception as e:
 
         print(
-            "Incident creation error:",
-            error
+            "Automatic incident creation failed:",
+            e
         )
 
         return None
 
 
 # ============================================================
-# UPDATE ACTIVE INCIDENT
-# ============================================================
-
-def update_incident(
-    incident_id,
-    duration,
-    risk_score,
-    risk_level
-):
-
-    try:
-
-        connection = get_connection()
-        cursor = connection.cursor()
-
-        cursor.execute(
-            """
-            UPDATE incidents
-            SET duration = ?,
-                risk_score = ?,
-                risk_level = ?
-            WHERE id = ?
-            """,
-            (
-                duration,
-                risk_score,
-                risk_level,
-                incident_id
-            )
-        )
-
-        connection.commit()
-        connection.close()
-
-    except Exception as error:
-
-        print(
-            "Incident update error:",
-            error
-        )
-
-
-# ============================================================
-# CLEAN OLD TRACKS
-# ============================================================
-
-def cleanup_tracks():
-
-    now = datetime.now().timestamp()
-
-    expired = []
-
-    for track_id, state in tracking_state.items():
-
-        last_seen = state.get(
-            "last_seen",
-            now
-        )
-
-        if now - last_seen > TRACK_TIMEOUT:
-
-            expired.append(track_id)
-
-    for track_id in expired:
-
-        tracking_state.pop(
-            track_id,
-            None
-        )
-
-        previous_positions.pop(
-            track_id,
-            None
-        )
-
-        entry_times.pop(
-            track_id,
-            None
-        )
-
-        incident_created.pop(
-            track_id,
-            None
-        )
-
-
-# ============================================================
-# YOLO DETECTION
-# ============================================================
-
-def process_frame(frame):
-
-    height, width = frame.shape[:2]
-
-    zone = get_scaled_zone(
-        width,
-        height
-    )
-
-    detections = []
-
-    intrusion_detected = False
-
-    active_intrusions = 0
-
-    # IMPORTANT:
-    # ByteTrack state is kept sequentially.
-    with model_lock:
-
-        results = model.track(
-            frame,
-            persist=True,
-            tracker="bytetrack.yaml",
-            conf=CONFIDENCE_THRESHOLD,
-            classes=[0],
-            imgsz=640,
-            verbose=False
-        )
-
-    if not results:
-
-        return {
-            "success": True,
-            "camera": CAMERA_NAME,
-            "zone": zone,
-            "detections": [],
-            "count": 0,
-            "intrusion_detected": False,
-            "active_intrusions": 0
-        }
-
-    result = results[0]
-
-    if result.boxes is None:
-
-        return {
-            "success": True,
-            "camera": CAMERA_NAME,
-            "zone": zone,
-            "detections": [],
-            "count": 0,
-            "intrusion_detected": False,
-            "active_intrusions": 0
-        }
-
-    boxes = result.boxes
-
-    ids = boxes.id
-
-    for i in range(len(boxes)):
-
-        cls_id = int(
-            boxes.cls[i].item()
-        )
-
-        confidence = float(
-            boxes.conf[i].item()
-        )
-
-        if cls_id != 0:
-            continue
-
-        x1, y1, x2, y2 = (
-            boxes.xyxy[i].tolist()
-        )
-
-        x1 = int(x1)
-        y1 = int(y1)
-        x2 = int(x2)
-        y2 = int(y2)
-
-        if ids is not None:
-
-            track_id = int(
-                ids[i].item()
-            )
-
-        else:
-
-            track_id = i
-
-        # Bottom-center of person
-        center_x = int(
-            (x1 + x2) / 2
-        )
-
-        foot_y = int(y2)
-
-        inside = is_inside_zone(
-            center_x,
-            foot_y,
-            zone
-        )
-
-        movement = calculate_movement(
-            track_id,
-            center_x,
-            foot_y
-        )
-
-        now_timestamp = (
-            datetime.now().timestamp()
-        )
-
-        state = tracking_state.get(
-            track_id
-        )
-
-        previous_inside = False
-
-        previous_distance = None
-
-        if state:
-
-            previous_inside = state.get(
-                "inside",
-                False
-            )
-
-            previous_distance = state.get(
-                "distance"
-            )
-
-        current_distance = distance_to_zone(
-            center_x,
-            foot_y,
-            zone
-        )
-
-        # Determine event
-        if inside and not previous_inside:
-
-            event = "ENTERED"
-
-        elif inside and previous_inside:
-
-            event = "INSIDE"
-
-        elif not inside and previous_inside:
-
-            event = "EXITED"
-
-        elif (
-            not inside
-            and previous_distance is not None
-            and current_distance < previous_distance
-        ):
-
-            event = "APPROACHING"
-
-        elif (
-            not inside
-            and previous_distance is not None
-            and current_distance > previous_distance
-        ):
-
-            event = "MOVING_AWAY"
-
-        else:
-
-            event = "OUTSIDE"
-
-        # Start timer on entry
-        if inside and track_id not in entry_times:
-
-            entry_times[track_id] = (
-                now_timestamp
-            )
-
-        # Remove timer after exit
-        if not inside and track_id in entry_times:
-
-            if previous_inside:
-
-                entry_times.pop(
-                    track_id,
-                    None
-                )
-
-        # Duration
-        if track_id in entry_times:
-
-            duration = round(
-                now_timestamp
-                - entry_times[track_id],
-                1
-            )
-
-        else:
-
-            duration = 0
-
-        risk_score, risk_level, night_context = (
-            calculate_risk(duration)
-        )
-
-        incident_id = incident_created.get(
-            track_id
-        )
-
-        # New intrusion
-        if (
-            event == "ENTERED"
-            and incident_id is None
-        ):
-
-            incident_id = create_automatic_incident(
-                track_id,
-                movement,
-                duration,
-                risk_score,
-                risk_level
-            )
-
-        # Update active intrusion
-        elif (
-            inside
-            and incident_id is not None
-        ):
-
-            update_incident(
-                incident_id,
-                duration,
-                risk_score,
-                risk_level
-            )
-
-        if inside:
-
-            intrusion_detected = True
-
-            active_intrusions += 1
-
-        # Save tracking state
-        tracking_state[track_id] = {
-            "inside": inside,
-            "distance": current_distance,
-            "last_seen": now_timestamp
-        }
-
-        detections.append(
-            {
-                "label": "person",
-                "track_id": track_id,
-                "confidence": round(
-                    confidence,
-                    3
-                ),
-                "box": [
-                    x1,
-                    y1,
-                    x2,
-                    y2
-                ],
-                "position": [
-                    center_x,
-                    foot_y
-                ],
-                "inside_zone": inside,
-                "zone_status": (
-                    "INSIDE"
-                    if inside
-                    else "OUTSIDE"
-                ),
-                "event": event,
-                "entered_zone": (
-                    event == "ENTERED"
-                ),
-                "exited_zone": (
-                    event == "EXITED"
-                ),
-                "approaching_zone": (
-                    event == "APPROACHING"
-                ),
-                "movement": movement,
-                "duration": duration,
-                "risk_score": risk_score,
-                "risk_level": risk_level,
-                "night_context": night_context,
-                "incident_id": incident_id
-            }
-        )
-
-    cleanup_tracks()
-
-    return {
-        "success": True,
-        "camera": CAMERA_NAME,
-        "frame": {
-            "width": width,
-            "height": height
-        },
-        "zone": zone,
-        "detections": detections,
-        "count": len(detections),
-        "intrusion_detected": intrusion_detected,
-        "active_intrusions": active_intrusions,
-        "system": {
-            "model": "YOLOv8n",
-            "tracker": "ByteTrack",
-            "confidence": CONFIDENCE_THRESHOLD
-        }
-    }
-
-
-# ============================================================
-# DETECT FRAME
+# DETECTION + TRACKING
 # ============================================================
 
 @app.post("/detect")
 async def detect_frame(request: Request):
 
     try:
+
+        # ----------------------------------------------------
+        # RECEIVE IMAGE
+        # ----------------------------------------------------
 
         image_bytes = await request.body()
 
@@ -895,6 +490,11 @@ async def detect_frame(request: Request):
                 "success": False,
                 "error": "No image received"
             }
+
+
+        # ----------------------------------------------------
+        # DECODE IMAGE
+        # ----------------------------------------------------
 
         image_array = np.frombuffer(
             image_bytes,
@@ -913,23 +513,417 @@ async def detect_frame(request: Request):
                 "error": "Could not decode image"
             }
 
-        # Run CPU-heavy YOLO work outside
-        # the FastAPI event loop.
-        result = await asyncio.to_thread(
-            process_frame,
-            frame
+
+        frame_height, frame_width = frame.shape[:2]
+
+
+        # ----------------------------------------------------
+        # YOLO + BYTE TRACK
+        # ----------------------------------------------------
+
+        results = model.track(
+
+            frame,
+
+            persist=True,
+
+            tracker="bytetrack.yaml",
+
+            conf=CONFIDENCE_THRESHOLD,
+
+            classes=[0],
+
+            verbose=False
         )
 
-        return result
 
-    except Exception as error:
+        detections = []
+
+        current_time = time.time()
+
+        active_track_ids = set()
+
+        intrusion_detected = False
+
+        active_intrusions = []
+
+
+        # ----------------------------------------------------
+        # PROCESS TRACKED PEOPLE
+        # ----------------------------------------------------
+
+        if (
+            results
+            and results[0].boxes is not None
+            and results[0].boxes.id is not None
+        ):
+
+            boxes = results[0].boxes
+
+            track_ids = boxes.id.int().tolist()
+
+            confidences = boxes.conf.tolist()
+
+            coordinates = boxes.xyxy.tolist()
+
+
+            for track_id, confidence, box in zip(
+                track_ids,
+                confidences,
+                coordinates
+            ):
+
+                track_id = int(track_id)
+
+                confidence = float(confidence)
+
+                x1, y1, x2, y2 = map(
+                    int,
+                    box
+                )
+
+
+                # ------------------------------------------------
+                # PERSON CENTER
+                # ------------------------------------------------
+
+                center_x = int(
+                    (x1 + x2) / 2
+                )
+
+                # Bottom-center is more useful
+                # for zone crossing.
+                center_y = int(y2)
+
+
+                current_position = (
+                    center_x,
+                    center_y
+                )
+
+
+                # ------------------------------------------------
+                # MOVEMENT
+                # ------------------------------------------------
+
+                previous_position = (
+                    previous_positions.get(track_id)
+                )
+
+                movement = calculate_movement(
+                    previous_position,
+                    current_position
+                )
+
+
+                previous_positions[track_id] = (
+                    current_position
+                )
+
+                last_seen[track_id] = current_time
+
+
+                # ------------------------------------------------
+                # ZONE STATUS
+                # ------------------------------------------------
+
+                inside_zone = is_inside_zone(
+                    center_x,
+                    center_y,
+                    frame_width,
+                    frame_height
+                )
+
+
+                was_inside = previous_inside.get(
+                    track_id,
+                    False
+                )
+
+
+                # ------------------------------------------------
+                # ENTRY DETECTION
+                # ------------------------------------------------
+
+                entered_zone = (
+                    inside_zone
+                    and not was_inside
+                )
+
+
+                # ------------------------------------------------
+                # START TIMER WHEN ENTERING
+                # ------------------------------------------------
+
+                if entered_zone:
+
+                    entry_times[track_id] = (
+                        current_time
+                    )
+
+                    incident_created[track_id] = False
+
+
+                # ------------------------------------------------
+                # IF INSIDE ZONE
+                # ------------------------------------------------
+
+                duration = 0
+
+                risk_score = 0
+
+                risk_level = "LOW"
+
+                is_night = False
+
+
+                if inside_zone:
+
+                    intrusion_detected = True
+
+                    # If entry time doesn't exist
+                    # create it.
+                    if track_id not in entry_times:
+
+                        entry_times[track_id] = (
+                            current_time
+                        )
+
+                    duration = (
+                        current_time
+                        - entry_times[track_id]
+                    )
+
+
+                    # Risk calculation
+
+                    (
+                        risk_score,
+                        risk_level,
+                        is_night
+                    ) = calculate_risk(
+                        duration
+                    )
+
+
+                    active_intrusions.append({
+
+                        "person_id": track_id,
+
+                        "duration": round(
+                            duration,
+                            1
+                        ),
+
+                        "movement": movement,
+
+                        "risk_score": risk_score,
+
+                        "risk_level": risk_level
+
+                    })
+
+
+                    # ------------------------------------------------
+                    # CREATE INCIDENT ONLY ON ENTRY
+                    # ------------------------------------------------
+
+                    if (
+                        entered_zone
+                        and not incident_created.get(
+                            track_id,
+                            False
+                        )
+                    ):
+
+                        create_automatic_incident(
+
+                            track_id,
+
+                            movement,
+
+                            duration,
+
+                            risk_score,
+
+                            risk_level
+
+                        )
+
+                        incident_created[
+                            track_id
+                        ] = True
+
+
+                else:
+
+                    # Person is outside.
+
+                    duration = 0
+
+                    risk_score = 0
+
+                    risk_level = "LOW"
+
+
+                # ------------------------------------------------
+                # SAVE CURRENT ZONE STATE
+                # ------------------------------------------------
+
+                previous_inside[
+                    track_id
+                ] = inside_zone
+
+
+                # ------------------------------------------------
+                # RESPONSE FOR THIS PERSON
+                # ------------------------------------------------
+
+                detections.append({
+
+                    "label": "person",
+
+                    "track_id": track_id,
+
+                    "confidence": round(
+                        confidence,
+                        3
+                    ),
+
+                    "box": [
+
+                        round(x1),
+
+                        round(y1),
+
+                        round(x2),
+
+                        round(y2)
+
+                    ],
+
+                    "inside_zone": inside_zone,
+
+                    "zone_status": (
+                        "INSIDE"
+                        if inside_zone
+                        else "OUTSIDE"
+                    ),
+
+                    "entered_zone": entered_zone,
+
+                    "movement": movement,
+
+                    "duration": round(
+                        duration,
+                        1
+                    ),
+
+                    "risk_score": risk_score,
+
+                    "risk_level": risk_level,
+
+                    "night_context": is_night
+
+                })
+
+
+        # ----------------------------------------------------
+        # CLEAN OLD TRACKS
+        # ----------------------------------------------------
+
+        cleanup_before = current_time - 30
+
+        old_ids = [
+
+            track_id
+
+            for track_id, seen_time
+            in last_seen.items()
+
+            if seen_time < cleanup_before
+
+        ]
+
+
+        for track_id in old_ids:
+
+            previous_positions.pop(
+                track_id,
+                None
+            )
+
+            entry_times.pop(
+                track_id,
+                None
+            )
+
+            incident_created.pop(
+                track_id,
+                None
+            )
+
+            previous_inside.pop(
+                track_id,
+                None
+            )
+
+            last_seen.pop(
+                track_id,
+                None
+            )
+
+
+        # ----------------------------------------------------
+        # RESPONSE
+        # ----------------------------------------------------
+
+        return {
+
+            "success": True,
+
+            "camera": CAMERA_ID,
+
+            "zone": {
+
+                "name": ZONE_NAME,
+
+                "x1": ZONE_X1,
+
+                "y1": ZONE_Y1,
+
+                "x2": ZONE_X2,
+
+                "y2": ZONE_Y2
+
+            },
+
+            "detections": detections,
+
+            "count": len(detections),
+
+            "intrusion_detected": (
+                intrusion_detected
+            ),
+
+            "active_intrusions": (
+                active_intrusions
+            )
+
+        }
+
+
+    except Exception as e:
 
         print(
             "Detection error:",
-            repr(error)
+            e
         )
 
         return {
+
             "success": False,
-            "error": str(error)
+
+            "error": str(e)
+
         }
